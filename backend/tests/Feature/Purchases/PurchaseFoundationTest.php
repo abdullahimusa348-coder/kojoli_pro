@@ -95,10 +95,19 @@ function puAttempt(Purchase $purchase, PlanProviderRoute $route, int $number = 1
         'provider_plan_code' => $route->provider_plan_code,
         'cost_type' => $route->cost_type,
         'cost_kobo' => $route->cost_kobo,
+        'cost_discount_bps' => $route->cost_discount_bps,
         'request_reference' => WalletService::reference('PRA'),
         'status' => PurchaseAttemptStatus::Started,
         'started_at' => now(),
     ]))->save();
+}
+
+/** Records the purchase debit (CP1 hardening: success and failure both require it). */
+function puDebited(Purchase $purchase): Purchase
+{
+    $purchase->forceFill(['debit_transaction_id' => puTransaction($purchase)])->save();
+
+    return $purchase->fresh();
 }
 
 /** A wallet transaction to link as debit or refund. */
@@ -148,7 +157,8 @@ describe('schema', function () {
         $debit = puTransaction($first);
         $first->forceFill(['debit_transaction_id' => $debit])->save();
 
-        $second = puPurchase();
+        // Same customer and wallet, so only the unique index (not the wallet guard) stands in the way.
+        $second = puPurchase(['user' => $first->user]);
         expect(fn () => $second->forceFill(['debit_transaction_id' => $debit])->save())->toThrow(UniqueConstraintViolationException::class);
     });
 
@@ -159,7 +169,7 @@ describe('schema', function () {
 
         expect(fn () => puAttempt($purchase, $route, 2))->toThrow(UniqueConstraintViolationException::class)
             ->and(fn () => puAttempt($purchase, puRoute($purchase->plan, 2), 1))->toThrow(UniqueConstraintViolationException::class)
-            ->and(fn () => puAttempt(puPurchase(), $route, 1, ['request_reference' => $attempt->request_reference]))->toThrow(UniqueConstraintViolationException::class);
+            ->and(fn () => puAttempt(puPurchase([], $purchase->plan), $route, 1, ['request_reference' => $attempt->request_reference]))->toThrow(UniqueConstraintViolationException::class);
     });
 });
 
@@ -207,27 +217,28 @@ describe('purchase guards', function () {
         expect(fn () => $purchase->forceFill(['status' => PurchaseStatus::Failed])->save())->toThrow(PurchaseException::class);
         expect(fn () => $purchase->fresh()->forceFill(['refund_transaction_id' => puTransaction($purchase, 'credit')])->save())->toThrow(PurchaseException::class);
 
-        $purchase = puPurchase();
+        $purchase = puDebited(puPurchase());
         $purchase->forceFill(['status' => PurchaseStatus::Failed, 'refund_transaction_id' => puTransaction($purchase, 'credit')])->save();
         expect($purchase->fresh()->status)->toBe(PurchaseStatus::Failed)->and($purchase->isFinal())->toBeTrue();
     });
 
     it('becomes successful only with the delivering attempt', function () {
-        $purchase = puPurchase();
+        $purchase = puDebited(puPurchase());
         $attempt = puAttempt($purchase, puRoute($purchase->plan));
+        $attempt->forceFill(['status' => PurchaseAttemptStatus::Succeeded])->save();
 
         expect(fn () => $purchase->forceFill(['status' => PurchaseStatus::Successful])->save())->toThrow(PurchaseException::class);
         expect(fn () => $purchase->fresh()->forceFill(['successful_attempt_id' => $attempt->id])->save())->toThrow(PurchaseException::class);
 
-        $purchase->fresh()->forceFill(['status' => PurchaseStatus::Successful, 'successful_attempt_id' => $attempt->id])->save();
+        $purchase->fresh()->forceFill(['status' => PurchaseStatus::Successful, 'successful_attempt_id' => $attempt->id, 'cost_kobo' => 45_000, 'margin_kobo' => 5_000])->save();
         expect($purchase->fresh()->successfulAttempt->is($attempt))->toBeTrue();
     });
 
     it('never leaves a final status', function () {
-        $purchase = puPurchase();
+        $purchase = puDebited(puPurchase());
         $purchase->forceFill(['status' => PurchaseStatus::Failed, 'refund_transaction_id' => puTransaction($purchase, 'credit')])->save();
 
-        expect(fn () => $purchase->fresh()->forceFill(['status' => PurchaseStatus::Review])->save())->toThrow(PurchaseException::class);
+        expect(fn () => $purchase->fresh()->forceFill(['status' => PurchaseStatus::Review])->save())->toThrow(LogicException::class);
     });
 
     it('is never deleted', function () {
@@ -271,7 +282,7 @@ describe('attempt guards', function () {
         $attempt->forceFill(['status' => PurchaseAttemptStatus::Unknown])->save();
         $attempt->fresh()->forceFill(['status' => PurchaseAttemptStatus::FailedDefinite])->save();
 
-        expect(fn () => $attempt->fresh()->forceFill(['status' => PurchaseAttemptStatus::Succeeded])->save())->toThrow(PurchaseException::class);
+        expect(fn () => $attempt->fresh()->forceFill(['status' => PurchaseAttemptStatus::Succeeded])->save())->toThrow(LogicException::class);
     });
 
     it('never changes its route snapshot or request reference', function (string $field, mixed $value) {
