@@ -31,8 +31,22 @@
             @if ($recentTransactions === [])
                 <div class="px-5 py-12 text-center">
                     <p class="text-sm font-medium text-navy-800">No transactions yet</p>
-                    <p class="mt-1 text-sm text-navy-500">Transactions will appear here once the Wallet &amp; Transactions module is live (Phase 8).</p>
+                    <p class="mt-1 text-sm text-navy-500">Customer transactions appear here as they happen.</p>
                 </div>
+            @else
+                <ul class="divide-y divide-navy-100" role="list">
+                    @foreach ($recentTransactions as $transaction)
+                        <li class="flex flex-wrap items-center justify-between gap-2 px-5 py-3 text-sm" data-recent-transaction="{{ $transaction->reference }}">
+                            <div class="min-w-0">
+                                <a href="{{ route('admin.transactions.show', $transaction) }}" class="break-all font-mono text-xs text-brand-700 hover:underline">{{ $transaction->reference }}</a>
+                                <p class="break-words text-navy-700">{{ $transaction->user->name }} · {{ $transaction->type->label() }} · {{ $transaction->status->label() }}</p>
+                            </div>
+                            <span @class(['font-semibold tabular-nums', 'text-green-700' => $transaction->direction === \App\Support\Wallet\Direction::Credit, 'text-navy-900' => $transaction->direction === \App\Support\Wallet\Direction::Debit])>
+                                {{ $transaction->direction === \App\Support\Wallet\Direction::Credit ? '+' : '−' }}{{ \App\Support\Money::format($transaction->amount_kobo) }}
+                            </span>
+                        </li>
+                    @endforeach
+                </ul>
             @endif
         </section>
     @endif

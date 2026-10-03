@@ -156,10 +156,11 @@ it('gives every customer type the same dashboard structure', function () {
     expect(array_unique(array_map('serialize', $structures)))->toHaveCount(1);
 });
 
-it('shows no money, wallet, transaction, service or future-module content', function () {
+it('shows no deposit, purchase, service or future-module content', function () {
+    // The real wallet balance card exists since Phase 8; money actions and services do not.
     $html = mb_strtolower($this->actingAs(dashCustomer())->get('/dashboard')->getContent());
 
-    foreach (['₦', 'ngn', 'naira', 'wallet', 'balance', 'fund', 'transaction', 'airtime', 'data plan', 'buy data',
+    foreach (['deposit', 'fund wallet', 'top up', 'transfer', 'airtime', 'data plan', 'buy data',
         'cable', 'electricity', 'bill', 'referral', 'commission', 'withdraw', 'payment', 'provider', 'service', 'coming soon'] as $word) {
         expect(str_contains($html, $word))->toBeFalse("found \"{$word}\"");
     }

@@ -53,11 +53,11 @@ it('lists all fifteen modules in order for super admin', function () {
 
 it('renders module placeholders without business data', function () {
     $this->actingAs(staffWith(SystemRole::SuperAdmin), 'admin')
-        ->get('/admin/wallet')
+        ->get('/admin/payments')
         ->assertOk()
-        ->assertSee('data-placeholder="wallet"', false)
-        ->assertSee('Wallet is not built yet')
-        ->assertSee('Phase 8');
+        ->assertSee('data-placeholder="payments"', false)
+        ->assertSee('Payments is not built yet')
+        ->assertSee('Phase 9');
 });
 
 it('shows all foundation cards to super admin with real counts and no invented money', function () {

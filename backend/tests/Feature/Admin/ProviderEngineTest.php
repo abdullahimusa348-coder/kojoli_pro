@@ -886,15 +886,14 @@ describe('scope', function () {
 
     it('adds no purchase, customer, mobile API, wallet or delete routes', function () {
         $public = collect(Route::getRoutes())->filter(fn ($r) => ! str_starts_with($r->uri(), 'admin')
-            && preg_match('/(provider|route|purchase|buy|vend|wallet|order|transaction|price)/i', $r->uri()));
+            && preg_match('/(provider|route|purchase|buy|vend|order|price)/i', $r->uri()));
         $deletes = collect(Route::getRoutes())->filter(fn ($r) => (str_starts_with($r->uri(), 'admin/providers') || str_contains($r->uri(), '/routes'))
             && in_array('DELETE', $r->methods(), true));
 
         expect($public->map->uri()->values()->all())->toBe([])->and($deletes)->toBeEmpty();
-        foreach (['wallets', 'orders', 'transactions', 'payments', 'commissions', 'purchases'] as $table) {
+        foreach (['orders', 'payments', 'commissions', 'purchases', 'provider_attempts'] as $table) {
             expect(Schema::hasTable($table))->toBeFalse("{$table} exists");
         }
-        expect(class_exists('App\\Models\\Wallet'))->toBeFalse()->and(class_exists('App\\Models\\Transaction'))->toBeFalse();
     });
 
     it('keeps route history append-only', function () {

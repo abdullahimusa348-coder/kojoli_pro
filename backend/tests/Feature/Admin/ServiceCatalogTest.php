@@ -510,9 +510,8 @@ describe('starting catalog', function () {
 
 describe('scope', function () {
     it('adds no purchasing, pricing, providers or customer-facing catalog pages', function () {
-        // Providers exist since Phase 7 (configuration only); purchasing, wallet and transactions do not.
-        expect(Schema::hasTable('orders'))->toBeFalse()
-            ->and(Schema::hasTable('transactions'))->toBeFalse()->and(Schema::hasTable('wallets'))->toBeFalse();
+        // Providers exist since Phase 7 (configuration only) and wallets/transactions since Phase 8; purchasing does not.
+        expect(Schema::hasTable('orders'))->toBeFalse()->and(Schema::hasTable('purchases'))->toBeFalse();
 
         foreach (['services', 'products', 'plans'] as $table) {
             foreach (['price', 'cost', 'amount', 'face_value', 'provider_id'] as $column) {
@@ -521,7 +520,7 @@ describe('scope', function () {
         }
 
         $customerCatalogRoutes = collect(Route::getRoutes())->filter(fn ($r) => ! str_starts_with($r->uri(), 'admin')
-            && preg_match('/(service|categor|plan|purchase|buy|order|wallet)/i', $r->uri()));
+            && preg_match('/(service|categor|plan|purchase|buy|order)/i', $r->uri()));
         expect($customerCatalogRoutes->map->uri()->values()->all())->toBe([]);
     });
 

@@ -4,11 +4,13 @@ namespace App\Models;
 
 use App\Support\Enums\UserStatus;
 use App\Support\Enums\UserType;
+use App\Support\Wallet\WalletType;
 use Database\Factories\UserFactory;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
@@ -126,5 +128,23 @@ class User extends Authenticatable implements MustVerifyEmail
         }
 
         return $digits;
+    }
+
+    /** @return HasMany<Wallet, $this> */
+    public function wallets(): HasMany
+    {
+        return $this->hasMany(Wallet::class);
+    }
+
+    /** The customer's main wallet, or null until the first credit or debit creates it. */
+    public function mainWallet(): ?Wallet
+    {
+        return $this->wallets()->where('type', WalletType::Main->value)->first();
+    }
+
+    /** @return HasMany<Transaction, $this> */
+    public function transactions(): HasMany
+    {
+        return $this->hasMany(Transaction::class);
     }
 }

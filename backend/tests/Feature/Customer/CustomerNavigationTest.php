@@ -15,7 +15,7 @@ function navCustomer(array $attributes = []): User
 describe('navigation list', function () {
     it('contains only implemented customer pages', function () {
         expect(array_map(fn (CustomerNav $i) => $i->value, CustomerNav::cases()))
-            ->toBe(['dashboard', 'account', 'security', 'email-verification']);
+            ->toBe(['dashboard', 'wallet', 'account', 'security', 'email-verification']);
     });
 
     it('points every item at a registered route', function () {
@@ -27,10 +27,10 @@ describe('navigation list', function () {
         }
     });
 
-    it('puts Dashboard and Account in the main bar and the rest in the menu', function () {
+    it('puts Dashboard, Wallet and Account in the main bar and the rest in the menu', function () {
         $user = navCustomer();
 
-        expect(CustomerNav::primaryFor($user))->toBe([CustomerNav::Dashboard, CustomerNav::Account])
+        expect(CustomerNav::primaryFor($user))->toBe([CustomerNav::Dashboard, CustomerNav::Wallet, CustomerNav::Account])
             ->and(CustomerNav::menuFor($user))->toBe([CustomerNav::Security]);
     });
 
@@ -96,7 +96,7 @@ describe('layout', function () {
     it('shows no future-module links or coming-soon placeholders', function () {
         $html = mb_strtolower($this->actingAs(navCustomer())->get('/dashboard')->getContent());
 
-        foreach (['wallet', 'airtime', 'cable', 'electricity', 'transaction', 'referral', 'withdraw', 'payment', 'support', 'notification', 'coming soon', 'data plan', '/services'] as $word) {
+        foreach (['airtime', 'cable', 'electricity', 'deposit', 'referral', 'withdraw', 'payment', 'support', 'notification', 'coming soon', 'data plan', '/services'] as $word) {
             expect(str_contains($html, $word))->toBeFalse("found \"{$word}\"");
         }
     });

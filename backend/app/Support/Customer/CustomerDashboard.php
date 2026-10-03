@@ -5,8 +5,9 @@ namespace App\Support\Customer;
 use App\Models\User;
 
 /**
- * Data for the customer dashboard home. Account information only: no wallet,
- * money, transaction or service figures until those modules exist.
+ * Data for the customer dashboard home: account information and the real
+ * main-wallet balance (₦0.00 until the first entry). No service figures until
+ * those modules exist.
  */
 class CustomerDashboard
 {
@@ -15,6 +16,7 @@ class CustomerDashboard
      *     user: User,
      *     emailStatus: array{label: string, tone: string},
      *     showVerificationPrompt: bool,
+     *     walletBalanceKobo: int,
      *     shortcuts: list<array{item: CustomerNav, description: string}>
      * }
      */
@@ -32,6 +34,7 @@ class CustomerDashboard
             },
             // Only when verification is switched on and this email is not verified yet.
             'showVerificationPrompt' => $required && ! $verified,
+            'walletBalanceKobo' => $user->mainWallet()?->balance_kobo ?? 0,
             'shortcuts' => [
                 ['item' => CustomerNav::Account, 'description' => 'View your details and update your name or email.'],
                 ['item' => CustomerNav::Security, 'description' => 'Change your password and keep your account safe.'],

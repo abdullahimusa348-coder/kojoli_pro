@@ -1,0 +1,2 @@
+{{-- Signed amount: "+₦1,000.00" (credit) or "−₦1,000.00" (debit). $direction: Direction, $kobo: int --}}
+<span @class(['whitespace-nowrap font-semibold tabular-nums', 'text-green-700' => $direction === \App\Support\Wallet\Direction::Credit, 'text-navy-900' => $direction === \App\Support\Wallet\Direction::Debit]) data-amount>{{ $direction === \App\Support\Wallet\Direction::Credit ? '+' : '−' }}{{ \App\Support\Money::format($kobo) }}</span>

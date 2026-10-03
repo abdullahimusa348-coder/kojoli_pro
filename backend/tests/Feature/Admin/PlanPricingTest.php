@@ -752,15 +752,16 @@ describe('scope', function () {
 
     it('adds no wallet, purchase or customer-facing pricing code', function () {
         // Providers exist since Phase 7 (configuration only, in their own tables); provider cost never lives in pricing.
-        foreach (['provider_routes', 'wallets', 'transactions', 'orders', 'payments', 'commissions', 'cashbacks'] as $table) {
+        // Wallets and transactions exist since Phase 8 (in their own tables); purchases and payments do not.
+        foreach (['provider_routes', 'orders', 'payments', 'commissions', 'cashbacks'] as $table) {
             expect(Schema::hasTable($table))->toBeFalse("{$table} exists");
         }
-        foreach (['App\\Models\\Wallet', 'App\\Models\\Transaction', 'App\\Models\\Order', 'App\\Services\\Pricing\\ProviderCost'] as $class) {
+        foreach (['App\\Models\\Order', 'App\\Services\\Pricing\\ProviderCost'] as $class) {
             expect(class_exists($class))->toBeFalse("{$class} exists");
         }
 
         $public = collect(Route::getRoutes())->filter(fn ($r) => ! str_starts_with($r->uri(), 'admin')
-            && preg_match('/(price|pricing|plan|purchase|buy|wallet|quote)/i', $r->uri()));
+            && preg_match('/(price|pricing|plan|purchase|buy|quote)/i', $r->uri()));
         expect($public->map->uri()->values()->all())->toBe([]);
     });
 });

@@ -29,6 +29,10 @@ class RolesAndPermissionsSeeder extends Seeder
             Permission::findOrCreate($permission->value, self::GUARD);
         }
 
+        // DatabaseSeeder runs WithoutModelEvents, so spatie's cache-refresh events do not
+        // fire for the permissions just created: reload them before assigning to roles.
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+
         foreach (SystemRole::cases() as $role) {
             $existing = Role::where('name', $role->value)->where('guard_name', self::GUARD)->first();
 

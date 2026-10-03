@@ -41,6 +41,7 @@ enum SystemPermission: string
 
     // Wallet
     case WalletView = 'wallet.view';
+    case WalletAdjust = 'wallet.adjust';
     case WalletManage = 'wallet.manage';
 
     // Services
@@ -100,7 +101,7 @@ enum SystemPermission: string
             self::SettingsView, self::SettingsUpdate => PermissionModule::Settings,
             self::CustomersView, self::CustomersUpdateStatus, self::CustomersChangeType,
             self::CustomersUpdate, self::CustomersResetPassword => PermissionModule::Users,
-            self::WalletView, self::WalletManage => PermissionModule::Wallet,
+            self::WalletView, self::WalletAdjust, self::WalletManage => PermissionModule::Wallet,
             self::ServicesView, self::ServicesCreate, self::ServicesUpdate, self::ServicesDelete => PermissionModule::Services,
             self::PricingView, self::PricingUpdate => PermissionModule::Pricing,
             self::ProvidersView, self::ProvidersCreate, self::ProvidersUpdate, self::ProvidersDelete, self::ProvidersCredentials => PermissionModule::Providers,
@@ -126,6 +127,8 @@ enum SystemPermission: string
             self::CustomersUpdate => 'Edit customer details',
             self::CustomersResetPassword => 'Send password reset',
             self::ProvidersCredentials => 'Manage credentials',
+            self::WalletAdjust => 'Credit / debit / reverse',
+            self::WalletManage => 'Freeze / unfreeze',
             self::WithdrawalsManage => 'Approve / manage',
             self::ReportsExport => 'Export',
             default => match (substr($this->value, strrpos($this->value, '.') + 1)) {

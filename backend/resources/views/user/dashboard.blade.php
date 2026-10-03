@@ -21,6 +21,15 @@
         </section>
     @endif
 
+    {{-- Wallet balance: the real main-wallet balance (₦0.00 until the first entry) --}}
+    <section class="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-navy-900 p-5 text-white shadow-sm sm:p-6" aria-labelledby="wallet-heading" data-wallet-card>
+        <div class="min-w-0">
+            <h2 id="wallet-heading" class="text-sm font-medium text-navy-100">Wallet balance</h2>
+            <p class="mt-1 break-all text-2xl font-semibold tabular-nums sm:text-3xl" data-wallet-balance>{{ \App\Support\Money::format($walletBalanceKobo) }}</p>
+        </div>
+        <a href="{{ route('wallet') }}" class="inline-flex shrink-0 items-center justify-center rounded-lg bg-white px-4 py-2 text-sm font-semibold text-navy-900 hover:bg-navy-50">View wallet</a>
+    </section>
+
     <div class="mt-6 grid gap-6 lg:grid-cols-3">
         {{-- Account summary --}}
         <section class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-navy-100 sm:p-6 lg:col-span-2" aria-labelledby="summary-heading" data-account-summary>

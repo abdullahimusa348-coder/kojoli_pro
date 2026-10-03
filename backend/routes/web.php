@@ -17,6 +17,8 @@ use App\Http\Controllers\Admin\ServiceCategoryController;
 use App\Http\Controllers\Admin\ServiceController;
 use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\SystemUserController;
+use App\Http\Controllers\Admin\TransactionController;
+use App\Http\Controllers\Admin\WalletController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\EmailVerificationController;
 use App\Http\Controllers\Auth\NewPasswordController;
@@ -26,6 +28,7 @@ use App\Http\Controllers\User\DashboardController;
 use App\Http\Controllers\User\PasswordController;
 use App\Http\Controllers\User\ProfileController;
 use App\Http\Controllers\User\SecurityController;
+use App\Http\Controllers\User\WalletController as CustomerWalletController;
 use App\Support\Admin\AdminModule;
 use App\Support\Enums\SystemPermission;
 use App\Support\Enums\UserType;
@@ -68,6 +71,8 @@ Route::middleware(['auth:web', 'auth.session'])->group(function () {
 
     // Profile stays reachable while unverified, so a mistyped email can be corrected.
     Route::get('dashboard', DashboardController::class)->middleware('verified.optional')->name('dashboard');
+    // The customer's own wallet (read-only in Phase 8: no deposits, withdrawals, purchases or transfers).
+    Route::get('wallet', CustomerWalletController::class)->middleware('verified.optional')->name('wallet');
 
     Route::get('profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('profile', [ProfileController::class, 'update'])->name('profile.update');
@@ -241,6 +246,27 @@ Route::prefix('admin')->name('admin.')->group(function () {
                     Route::patch('{provider}/credentials/{key}/clear', [ProviderCredentialController::class, 'clear'])->whereNumber('provider')
                         ->whereIn('key', CredentialKey::values())->name('.credentials.clear');
                 });
+            });
+
+        // Customer wallets: wallet.view; adjustments and reversals need wallet.adjust,
+        // freezing needs wallet.manage. No update or delete routes for ledger entries.
+        Route::middleware([SystemPermission::AdminAccess->middleware(), SystemPermission::WalletView->middleware()])
+            ->prefix('wallet')->name('wallet')->group(function () {
+                Route::get('/', [WalletController::class, 'index']);
+                Route::get('{customer}', [WalletController::class, 'show'])->whereNumber('customer')->name('.show');
+                Route::post('{customer}/adjust', [WalletController::class, 'adjust'])->whereNumber('customer')
+                    ->middleware([SystemPermission::WalletAdjust->middleware(), 'throttle:30,1'])->name('.adjust');
+                Route::post('{customer}/transactions/{transaction}/reverse', [WalletController::class, 'reverse'])->whereNumber(['customer', 'transaction'])
+                    ->middleware([SystemPermission::WalletAdjust->middleware(), 'throttle:30,1'])->name('.reverse');
+                Route::patch('{customer}/status', [WalletController::class, 'updateStatus'])->whereNumber('customer')
+                    ->middleware(SystemPermission::WalletManage->middleware())->name('.status');
+            });
+
+        // Customer transactions (read-only in Phase 8): transactions.view.
+        Route::middleware([SystemPermission::AdminAccess->middleware(), SystemPermission::TransactionsView->middleware()])
+            ->prefix('transactions')->name('transactions')->group(function () {
+                Route::get('/', [TransactionController::class, 'index']);
+                Route::get('{transaction}', [TransactionController::class, 'show'])->whereNumber('transaction')->name('.show');
             });
 
         // Modules not built yet: navigation placeholders only, no business logic.

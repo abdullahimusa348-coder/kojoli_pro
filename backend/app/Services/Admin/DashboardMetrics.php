@@ -3,7 +3,9 @@
 namespace App\Services\Admin;
 
 use App\Models\SystemUser;
+use App\Models\Transaction;
 use App\Models\User;
+use App\Models\Wallet;
 use App\Support\Admin\AdminModule;
 use App\Support\Money;
 
@@ -28,8 +30,15 @@ class DashboardMetrics
                 'live' => true,
                 'note' => 'Registered customer accounts',
             ],
-            $this->notLive('wallet-balance', 'Wallet Balance', AdminModule::Wallet, Money::format(0)),
-            $this->notLive('todays-sales', 'Today’s Sales', AdminModule::Transactions, '0'),
+            [
+                'key' => 'wallet-balance',
+                'label' => 'Wallet Balance',
+                'module' => AdminModule::Wallet,
+                'value' => Money::format((int) Wallet::sum('balance_kobo')),
+                'live' => true,
+                'note' => 'Total held in customer wallets',
+            ],
+            $this->notLive('todays-sales', 'Today’s Sales', AdminModule::Transactions, '0', 'No data yet: service purchases arrive in Phase 10'),
             $this->notLive('todays-revenue', 'Today’s Revenue', AdminModule::Reports, Money::format(0)),
             $this->notLive('pending-withdrawals', 'Pending Withdrawals', AdminModule::Withdrawals, '0'),
         ];
@@ -47,17 +56,17 @@ class DashboardMetrics
     }
 
     /**
-     * No transactions table exists until Phase 8.
+     * The five latest customer transactions (real data only).
      *
-     * @return list<array<string, mixed>>
+     * @return list<Transaction>
      */
     public function recentTransactions(): array
     {
-        return [];
+        return Transaction::with('user:id,name')->latest('id')->limit(5)->get()->all();
     }
 
     /** @return array{key: string, label: string, module: AdminModule, value: string, live: bool, note: string} */
-    private function notLive(string $key, string $label, AdminModule $module, string $zero): array
+    private function notLive(string $key, string $label, AdminModule $module, string $zero, ?string $note = null): array
     {
         return [
             'key' => $key,
@@ -65,7 +74,7 @@ class DashboardMetrics
             'module' => $module,
             'value' => $zero,
             'live' => false,
-            'note' => "No data yet: {$module->label()} module arrives in Phase {$module->plannedPhase()}",
+            'note' => $note ?? "No data yet: {$module->label()} module arrives in Phase {$module->plannedPhase()}",
         ];
     }
 }

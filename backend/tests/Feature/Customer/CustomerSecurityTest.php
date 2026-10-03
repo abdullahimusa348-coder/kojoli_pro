@@ -94,7 +94,7 @@ describe('page', function () {
     it('shows no future-module content', function () {
         $html = mb_strtolower($this->actingAs(securityCustomer())->get('/security')->getContent());
 
-        foreach (['wallet', 'airtime', 'transaction', 'referral', 'withdraw', 'payment', 'two-factor', '2fa', 'api key', 'create token', 'delete account', 'coming soon'] as $word) {
+        foreach (['deposit', 'airtime', 'referral', 'withdraw', 'payment', 'two-factor', '2fa', 'api key', 'create token', 'delete account', 'coming soon'] as $word) {
             expect(str_contains($html, $word))->toBeFalse("found \"{$word}\"");
         }
     });

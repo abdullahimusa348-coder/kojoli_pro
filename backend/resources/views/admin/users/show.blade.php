@@ -48,6 +48,16 @@
 
         {{-- Actions, each shown only with its permission (and enforced on the server) --}}
         <div class="space-y-6">
+            @can(\App\Support\Enums\SystemPermission::WalletView->value)
+                @php($customerWallet = $customer->mainWallet())
+                <section class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-navy-100" aria-labelledby="wallet-heading" data-customer-wallet>
+                    <h2 id="wallet-heading" class="text-base font-semibold text-navy-900">Wallet</h2>
+                    <p class="mt-2 break-all text-2xl font-semibold tabular-nums text-navy-900" data-customer-wallet-balance>{{ \App\Support\Money::format($customerWallet?->balance_kobo ?? 0) }}</p>
+                    <p class="mt-1 text-xs text-navy-600">{{ $customerWallet ? $customerWallet->status->label().' main wallet' : 'No wallet activity yet' }}</p>
+                    <a href="{{ route('admin.wallet.show', $customer) }}" class="mt-3 inline-flex w-full justify-center rounded-lg px-4 py-2 text-sm font-semibold text-brand-700 ring-1 ring-navy-200 hover:bg-navy-50">Open wallet</a>
+                </section>
+            @endcan
+
             @if ($can['status'])
                 <section class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-navy-100" aria-labelledby="status-heading">
                     <h2 id="status-heading" class="text-base font-semibold text-navy-900">Account status</h2>
