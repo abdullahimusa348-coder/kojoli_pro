@@ -1,6 +1,6 @@
 # PROJECT STATUS: Nadabo Global Data
 
-Last updated: 2026-10-03 · Stage: **Phase 3 complete and closed: Admin Dashboard foundation** (Steps 1–5). Phase 4 not started; awaiting approval
+Last updated: 2026-10-03 · Stage: **Phase 4 Step 1 complete: Customer layout and navigation** (Phase 3 complete and closed). Phase 4 Steps 2–5 not started
 
 ## Current state
 - Phase 1 foundation installed and verified with `scripts/bootstrap.sh`: Laravel 12.69.3, PHP 8.3.6, Node 22 / npm 10, MariaDB 10.11.
@@ -13,7 +13,8 @@ Last updated: 2026-10-03 · Stage: **Phase 3 complete and closed: Admin Dashboar
 - Phase 3 Step 4: Roles & Permissions management at `/admin/roles` (list with search/type filter, create, edit, delete custom roles) with a permission matrix grouped by 16 modules; 36-permission catalog; custom roles assignable to staff. 241 Pest tests pass.
 - Phase 3 Step 5: Customer Users management at `/admin/users`: list with search (name, email, phone in any format, ID) and type/status filters, pagination, safe customer details, enable/disable (revokes API tokens), type change via `ChangeUserType`, profile edit, password-reset email. No deletion. 288 Pest tests pass.
 - Phase 3 Step 5 closing check (2026-10-03): clean working tree in sync with GitHub, 288 tests passing, Pint, build and route/config/view/event cache checks pass, all 11 migrations ran; Step 5 diff reviewed (no unrelated changes, secrets, customer-view or mobile changes); no verification customers, staff, tokens, reset tokens, sessions or custom roles left in the local database.
-- **Phase 3 closed (2026-10-03):** all roadmap goals met (admin layout and navigation, database settings store, System Users) plus Roles & Permissions and Customer Users; done-when criterion "admin can log in and manage settings without `.env`" met. Final check: clean tree in sync with GitHub, 288 tests passing, Pint, build and route/config/view/event caches pass, 11 migrations ran, `/up`, `/api/v1/health`, `/admin/login` and `/login` return 200, no secrets tracked, no verification data left. Open items carried forward are listed under "Carried forward from Phase 3". `/up` and `/api/v1/health` return 200.
+- **Phase 3 closed (2026-10-03):** all roadmap goals met (admin layout and navigation, database settings store, System Users) plus Roles & Permissions and Customer Users; done-when criterion "admin can log in and manage settings without `.env`" met. Final check: clean tree in sync with GitHub, 288 tests passing, Pint, build and route/config/view/event caches pass, 11 migrations ran, `/up`, `/api/v1/health`, `/admin/login` and `/login` return 200, no secrets tracked, no verification data left. Open items carried forward are listed under "Carried forward from Phase 3".
+- Phase 4 Step 1: mobile-first customer layout with the temporary text brand "Nadabo Global Data": desktop top bar (Dashboard, Account, account menu), mobile bottom bar (Dashboard, Account, Menu) and menu panel (Security, Email verification when enabled, Log out), all from one list `App\Support\Customer\CustomerNav`. Only implemented pages are listed; no future-module or coming-soon entries. Security points to the password section of the Account page until Step 4 adds a Security page. 306 Pest tests pass. `/up` and `/api/v1/health` return 200.
 - Repository layout: Laravel backend in `backend/`, Flutter app in `mobile/`.
 
 ## Technology stack (approved)
@@ -121,6 +122,7 @@ Admin navigation (`App\Support\Admin\AdminModule`): each sidebar item and its pa
 - Layouts: `layouts/base` (root), `layouts/guest` (auth card), `layouts/app` (signed-in shell with mobile menu)
 - Components: `x-input`, `x-button`, `x-alert`
 - Layouts also include `layouts/admin` (staff area: sidebar, top bar, mobile drawer, profile menu) with partials `admin/partials/{sidebar, topbar}`
+- Customer layout `layouts/app` (Phase 4): sticky top bar with text brand, desktop links and account menu; mobile bottom navigation and menu panel; partials `layouts/partials/customer/{brand, avatar, menu-items}`; navigation from `App\Support\Customer\CustomerNav` (add future customer pages there in their own phase)
 - Views: `auth/*` (incl. `verify-email`), `user/dashboard`, `user/profile`, `admin/auth/login`, `admin/dashboard`, `admin/placeholder`, `admin/settings/{index, field}`
 
 ## Existing backend structure

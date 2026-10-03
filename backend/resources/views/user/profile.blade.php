@@ -27,7 +27,7 @@
             </form>
         </section>
 
-        <section class="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-navy-100">
+        <section id="security" class="scroll-mt-24 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-navy-100">
             <h2 class="mb-4 text-lg font-semibold text-navy-900">Change password</h2>
             @if (session('status') === 'password-updated')
                 <x-alert>Password updated. Other devices have been signed out.</x-alert>
