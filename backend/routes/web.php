@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Admin\Auth\AdminSessionController;
 use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
+use App\Http\Controllers\Admin\ModulePlaceholderController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\EmailVerificationController;
 use App\Http\Controllers\Auth\NewPasswordController;
@@ -10,6 +11,7 @@ use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\User\DashboardController;
 use App\Http\Controllers\User\PasswordController;
 use App\Http\Controllers\User\ProfileController;
+use App\Support\Admin\AdminModule;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -55,7 +57,8 @@ Route::middleware(['auth:web', 'auth.session'])->group(function () {
 });
 
 // Admin area: staff only (system_users, `admin` guard, separate session cookie).
-// Customer sessions are never read here. The full admin dashboard is Phase 3.
+// Customer sessions are never read here. Each page is guarded by the same
+// permission that shows it in the sidebar (App\Support\Admin\AdminModule).
 Route::prefix('admin')->name('admin.')->group(function () {
     Route::middleware('guest:admin')->group(function () {
         Route::get('login', [AdminSessionController::class, 'create'])->name('login');
@@ -66,7 +69,19 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::post('logout', [AdminSessionController::class, 'destroy'])->name('logout');
 
         Route::get('/', AdminDashboardController::class)
-            ->middleware('permission:admin.access,admin')
+            ->middleware('permission:'.AdminModule::Dashboard->permission().',admin')
             ->name('dashboard');
+
+        // Modules not built yet: navigation placeholders only, no business logic.
+        foreach (AdminModule::cases() as $module) {
+            if ($module === AdminModule::Dashboard) {
+                continue;
+            }
+
+            Route::get($module->path(), ModulePlaceholderController::class)
+                ->defaults('module', $module->value)
+                ->middleware(['permission:'.AdminModule::Dashboard->permission().',admin', 'permission:'.$module->permission().',admin'])
+                ->name($module->value);
+        }
     });
 });

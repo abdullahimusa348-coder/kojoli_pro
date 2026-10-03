@@ -1,11 +1,11 @@
 # PROJECT STATUS: Nadabo Global Data
 
-Last updated: 2026-10-03 · Stage: **Phase 2 complete, plus approved pre-Phase-3 changes** (separate staff accounts, email verification, token expiry). Awaiting approval for Phase 3
+Last updated: 2026-10-03 · Stage: **Phase 3 Step 1 complete: admin dashboard foundation** (layout, navigation, placeholders). Awaiting approval for the next step
 
 ## Current state
 - Phase 1 foundation installed and verified with `scripts/bootstrap.sh`: Laravel 12.69.3, PHP 8.3.6, Node 22 / npm 10, MariaDB 10.11.
 - Phase 2 adds customer authentication, user types, account status, a profile page, a user dashboard shell, and Sanctum token authentication for the future mobile app.
-- Pre-Phase-3 changes: staff (System Users) are fully separate from customers, with 5 roles on their own guard; configurable email verification (off); configurable API token expiry. 89 Pest tests pass. `/up` and `/api/v1/health` return 200.
+- Pre-Phase-3 changes: staff (System Users) are fully separate from customers, with 5 roles on their own guard; configurable email verification (off); configurable API token expiry. - Phase 3 Step 1: admin layout (sidebar, top bar, mobile drawer, profile menu, logout), dashboard home with foundation cards, and permission-guarded placeholder pages for every planned module. 112 Pest tests pass. `/up` and `/api/v1/health` return 200.
 - Repository layout: Laravel backend in `backend/`, Flutter app in `mobile/`.
 
 ## Technology stack (approved)
@@ -29,7 +29,9 @@ Action/Service layering, versioned API (`/api/v1`), thin controllers. See `docs/
 - **Customer auth (web):** `/register`, `/login` (email or phone), `POST /logout`, `/forgot-password`, `/reset-password/{token}`
 - **Customer area:** `/dashboard`, `/profile` (name, email, phone, password change)
 - **Email verification (configurable, off):** `/verify-email`, `/verify-email/{id}/{hash}`, `POST /email/verification-notification`
-- **Staff auth:** `/admin/login` (email), `POST /admin/logout`, `/admin` (placeholder page; the dashboard itself is Phase 3)
+- **Staff auth:** `/admin/login` (email), `POST /admin/logout`
+- **Admin dashboard:** `/admin` with cards Total Users (real customer count), Wallet Balance, Today's Sales, Today's Revenue, Pending Withdrawals, and a Recent Transactions panel. Modules without data show 0 / an empty state marked "Not live"; no figures are invented.
+- **Admin module placeholders (no business logic):** `/admin/{users, services, transactions, providers, payments, wallet, withdrawals, referrals, notifications, support, reports, settings, system-users, roles}`
 - **API auth:** `POST /api/v1/auth/token`, `DELETE /api/v1/auth/token`, `GET /api/v1/user`
 - **Console:** `php artisan nadabo:create-system-user {email} --role=<super-admin|manager|support|finance|viewer>` (password typed interactively)
 - **Customer type changes:** `App\Actions\Customers\ChangeUserType` (requires staff permission `customers.change-type`; UI in Phase 3)
@@ -68,12 +70,14 @@ Action/Service layering, versioned API (`/api/v1`), thin controllers. See `docs/
 | `customers.change-type` | ✓ | ✓ | | | |
 | `system-users.manage` | ✓ | | | | |
 
+Admin navigation (`App\Support\Admin\AdminModule`): each sidebar item and its page require the same permission. Dashboard = `admin.access`; Users = `customers.view`; System Users and Roles & Permissions = `system-users.manage`. Every other module uses a **reserved** permission (`services.view`, `transactions.view`, `providers.view`, `payments.view`, `wallet.view`, `withdrawals.view`, `referrals.view`, `notifications.view`, `support.view`, `reports.view`, `settings.view`) that is not seeded or granted yet, so only Super Admin sees those modules and the financial dashboard cards until each module is built and its permission approved. Result today: Super Admin sees all 15 items and all cards; Manager, Support, Finance and Viewer see Dashboard and Users, and only the Total Users card.
+
 ## Existing frontend structure
 - `resources/css/theme.css` (navy/blue tokens), `resources/css/app.css`, `resources/js/app.js` (Alpine)
 - Layouts: `layouts/base` (root), `layouts/guest` (auth card), `layouts/app` (signed-in shell with mobile menu)
 - Components: `x-input`, `x-button`, `x-alert`
-- Layouts also include `layouts/admin` (staff area)
-- Views: `auth/*` (incl. `verify-email`), `user/dashboard`, `user/profile`, `admin/auth/login`, `admin/dashboard`
+- Layouts also include `layouts/admin` (staff area: sidebar, top bar, mobile drawer, profile menu) with partials `admin/partials/{sidebar, topbar}`
+- Views: `auth/*` (incl. `verify-email`), `user/dashboard`, `user/profile`, `admin/auth/login`, `admin/dashboard`, `admin/placeholder`
 
 ## Existing backend structure
 - `app/Actions/Auth/{RegisterUser, AuthenticateUser}` (customers, web and API), `app/Actions/Admin/Auth/AuthenticateSystemUser` (staff), `app/Actions/Customers/ChangeUserType`
@@ -81,11 +85,13 @@ Action/Service layering, versioned API (`/api/v1`), thin controllers. See `docs/
 - `app/Support/Enums/{UserType, UserStatus, SystemRole, SystemPermission}`, `app/Support/Validation/AccountRules`, `app/Support/Auth/LoginThrottle`
 - `app/Http/Middleware/{UseAdminSession, EnsureUserIsActive, EnsureSystemUserIsActive, EnsureEmailIsVerifiedIfRequired}` (aliases `active`, `staff.active`, `verified.optional`; spatie `role`, `permission`)
 - Controllers: `Auth/*`, `User/*`, `Admin/{DashboardController, Auth/AdminSessionController}`, `Api/V1/{HealthController, Auth/*}`
+- `app/Support/Admin/AdminModule` (admin navigation registry), `app/Services/Admin/DashboardMetrics`, `app/Support/Money`
+- `app/Http/Controllers/Admin/{DashboardController, ModulePlaceholderController}`
 - `app/Console/Commands/CreateSystemUserCommand`
 - Tests: `tests/Feature/{Auth, User, Admin, Api/V1}`, `tests/Unit/UserPhoneTest`
 
 ## Not built (by instruction)
-Admin dashboard (Phase 3), services, plans, providers/APIs, wallet, payment gateways, referral, KYC, business API endpoints, cPanel deployment.
+Admin module contents (Users, Settings, System Users, Roles screens are the next Phase 3 steps), services, plans, providers/APIs, wallet, payment gateways, referral, KYC, business API endpoints, cPanel deployment.
 
 ## Problems / blockers
 1. cPanel PHP 8.3 availability unconfirmed. Check before Phase 20, or earlier if you already have a host.
