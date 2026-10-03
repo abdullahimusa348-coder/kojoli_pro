@@ -10,8 +10,11 @@ use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 
 /**
- * Staff roles and permissions on the `admin` guard. Idempotent: safe to run on
- * every deploy, and it resets each role to exactly its defined permissions.
+ * Staff roles and permissions on the `admin` guard. Safe to run on every deploy:
+ * - every SystemPermission is stored;
+ * - built-in roles that do not exist yet are created with their default permissions;
+ * - existing roles keep the permissions staff gave them in the admin area;
+ * - Super Admin always holds every permission.
  * Customers (users table) never hold roles; their tier is users.user_type.
  */
 class RolesAndPermissionsSeeder extends Seeder
@@ -27,7 +30,13 @@ class RolesAndPermissionsSeeder extends Seeder
         }
 
         foreach (SystemRole::cases() as $role) {
-            Role::findOrCreate($role->value, self::GUARD)->syncPermissions($role->permissions());
+            $existing = Role::where('name', $role->value)->where('guard_name', self::GUARD)->first();
+
+            if ($existing === null) {
+                Role::create(['name' => $role->value, 'guard_name' => self::GUARD])->syncPermissions($role->permissions());
+            } elseif ($role === SystemRole::SuperAdmin) {
+                $existing->syncPermissions($role->permissions());
+            }
         }
 
         app(PermissionRegistrar::class)->forgetCachedPermissions();

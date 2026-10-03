@@ -3,6 +3,7 @@
 use App\Http\Controllers\Admin\Auth\AdminSessionController;
 use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
 use App\Http\Controllers\Admin\ModulePlaceholderController;
+use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\SystemUserController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
@@ -100,6 +101,16 @@ Route::prefix('admin')->name('admin.')->group(function () {
             Route::put('{systemUser}', [SystemUserController::class, 'update'])->name('.update');
             Route::patch('{systemUser}/status', [SystemUserController::class, 'updateStatus'])->name('.status');
             Route::delete('{systemUser}', [SystemUserController::class, 'destroy'])->name('.destroy');
+        });
+
+        // Roles & Permissions
+        Route::middleware(SystemPermission::AdminAccess->middleware())->prefix('roles')->name('roles')->group(function () {
+            Route::get('/', [RoleController::class, 'index'])->middleware(SystemPermission::RolesView->middleware());
+            Route::get('create', [RoleController::class, 'create'])->middleware(SystemPermission::RolesCreate->middleware())->name('.create');
+            Route::post('/', [RoleController::class, 'store'])->middleware(SystemPermission::RolesCreate->middleware())->name('.store');
+            Route::get('{adminRole}/edit', [RoleController::class, 'edit'])->middleware(SystemPermission::RolesView->middleware())->name('.edit');
+            Route::put('{adminRole}', [RoleController::class, 'update'])->middleware(SystemPermission::RolesUpdate->middleware())->name('.update');
+            Route::delete('{adminRole}', [RoleController::class, 'destroy'])->middleware(SystemPermission::RolesDelete->middleware())->name('.destroy');
         });
 
         // Modules not built yet: navigation placeholders only, no business logic.

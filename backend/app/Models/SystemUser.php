@@ -83,17 +83,23 @@ class SystemUser extends Authenticatable
         return $this->isActive() && $this->can(SystemPermission::AdminAccess->value);
     }
 
-    /** The staff member's role (one role per staff account). */
+    /** Name of the staff member's role (one role per staff account), built-in or custom. */
+    public function primaryRoleName(): ?string
+    {
+        return $this->getRoleNames()->first();
+    }
+
+    /** The staff member's role if it is a built-in role. */
     public function primaryRole(): ?SystemRole
     {
-        return SystemRole::tryFrom((string) $this->getRoleNames()->first());
+        return SystemRole::tryFrom((string) $this->primaryRoleName());
     }
 
     /** Human-readable role names, e.g. "Manager". */
     public function roleLabels(): string
     {
         return $this->getRoleNames()
-            ->map(fn (string $name) => SystemRole::tryFrom($name)?->label() ?? $name)
+            ->map(fn (string $name) => SystemRole::labelFor($name))
             ->implode(', ');
     }
 }

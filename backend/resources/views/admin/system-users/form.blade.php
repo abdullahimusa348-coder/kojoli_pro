@@ -9,14 +9,14 @@
 <div class="mb-4">
     <label for="role" class="mb-1 block text-sm font-medium text-navy-800">Role</label>
     @if ($editing && ($isSelf ?? false))
-        <input type="hidden" name="role" value="{{ $staff->primaryRole()?->value }}">
-        <select id="role" disabled class="{{ $selectClass }} border-navy-200"><option>{{ $staff->primaryRole()?->label() }}</option></select>
+        <input type="hidden" name="role" value="{{ $staff->primaryRoleName() }}">
+        <select id="role" disabled class="{{ $selectClass }} border-navy-200"><option>{{ $staff->roleLabels() }}</option></select>
         <p class="mt-1 text-xs text-navy-500">You cannot change your own role.</p>
     @else
         <select id="role" name="role" required @class([$selectClass, 'border-red-400' => $errors->has('role'), 'border-navy-200' => ! $errors->has('role')])>
             <option value="">Choose a role</option>
-            @foreach ($roles as $role)
-                <option value="{{ $role->value }}" @selected(old('role', $editing ? $staff->primaryRole()?->value : null) === $role->value)>{{ $role->label() }}</option>
+            @foreach ($roles as $roleName => $roleLabel)
+                <option value="{{ $roleName }}" @selected(old('role', $editing ? $staff->primaryRoleName() : null) === $roleName)>{{ $roleLabel }}</option>
             @endforeach
         </select>
         @error('role')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror

@@ -1,6 +1,6 @@
 # PROJECT STATUS: Nadabo Global Data
 
-Last updated: 2026-10-03 · Stage: **Phase 3 Step 3 complete and closed: System Users management** (Steps 1 and 2 also complete). Phase 3 Step 4 not started; awaiting approval
+Last updated: 2026-10-03 · Stage: **Phase 3 Step 4 complete: Roles & Permissions** (Steps 1–3 also complete). Phase 3 Step 5 not started; awaiting approval
 
 ## Current state
 - Phase 1 foundation installed and verified with `scripts/bootstrap.sh`: Laravel 12.69.3, PHP 8.3.6, Node 22 / npm 10, MariaDB 10.11.
@@ -9,7 +9,8 @@ Last updated: 2026-10-03 · Stage: **Phase 3 Step 3 complete and closed: System 
 - Phase 3 Step 2: database-backed Settings Store (typed, cached, optional encryption for future secrets) and a working `/admin/settings` screen. 152 Pest tests pass.
 - Phase 3 Step 2 closing check (2026-10-03): desktop (1440px) and mobile (390px) visual check of `/admin/settings`; invalid save shows a summary banner and per-field errors (required name, 3-letter currency, valid timezone) and keeps the typed input; valid save shows "Settings saved." and the values persist after a fresh reload; no JavaScript errors or horizontal scrolling. 152 tests, Pint, build and route/config/view/event cache checks pass.
 - Phase 3 Step 3: System Users (staff accounts) management at `/admin/system-users`: list with search and role/status filters, create, edit (optional password change), activate/deactivate, soft delete, one role per staff member, safety rules. 198 Pest tests pass.
-- Phase 3 Step 3 closing check (2026-10-03): clean working tree, 198 tests passing, Pint, build and route/config/view/event cache checks pass; Step 3 diff reviewed (no unrelated changes, secrets, customer-view or mobile changes); temporary verification accounts and sessions removed from the local database. `/up` and `/api/v1/health` return 200.
+- Phase 3 Step 3 closing check (2026-10-03): clean working tree, 198 tests passing, Pint, build and route/config/view/event cache checks pass; Step 3 diff reviewed (no unrelated changes, secrets, customer-view or mobile changes); temporary verification accounts and sessions removed from the local database.
+- Phase 3 Step 4: Roles & Permissions management at `/admin/roles` (list with search/type filter, create, edit, delete custom roles) with a permission matrix grouped by 16 modules; 36-permission catalog; custom roles assignable to staff. 241 Pest tests pass. `/up` and `/api/v1/health` return 200.
 - Repository layout: Laravel backend in `backend/`, Flutter app in `mobile/`.
 
 ## Technology stack (approved)
@@ -37,7 +38,8 @@ Action/Service layering, versioned API (`/api/v1`), thin controllers. See `docs/
 - **Admin dashboard:** `/admin` with cards Total Users (real customer count), Wallet Balance, Today's Sales, Today's Revenue, Pending Withdrawals, and a Recent Transactions panel. Modules without data show 0 / an empty state marked "Not live"; no figures are invented.
 - **Admin settings:** `GET /admin/settings` (view, needs `settings.view`), `PUT /admin/settings` (save, needs `settings.view` + `settings.update`). Grouped, validated, success/error feedback.
 - **System Users (staff):** `/admin/system-users` (list, search, filter), `/create`, `POST`, `/{id}/edit`, `PUT /{id}`, `PATCH /{id}/status`, `DELETE /{id}`. All need `admin.access` + `system-users.manage`.
-- **Admin module placeholders (no business logic):** `/admin/{users, services, transactions, providers, payments, wallet, withdrawals, referrals, notifications, support, reports, roles}`
+- **Roles & Permissions:** `/admin/roles` (`roles.view`), `/create` + `POST` (`roles.create`), `/{id}/edit` (`roles.view`, read-only without `roles.update`), `PUT /{id}` (`roles.update`), `DELETE /{id}` (`roles.delete`). All also need `admin.access`.
+- **Admin module placeholders (no business logic):** `/admin/{users, services, transactions, providers, payments, wallet, withdrawals, referrals, notifications, support, reports}`
 - **API auth:** `POST /api/v1/auth/token`, `DELETE /api/v1/auth/token`, `GET /api/v1/user`
 - **Console:** `php artisan nadabo:create-system-user {email} --role=<super-admin|manager|support|finance|viewer>` (password typed interactively)
 - **Customer type changes:** `App\Actions\Customers\ChangeUserType` (requires staff permission `customers.change-type`; UI in Phase 3)
@@ -49,7 +51,7 @@ Action/Service layering, versioned API (`/api/v1`), thin controllers. See `docs/
 - spatie permission tables: `roles`, `permissions`, `model_has_roles`, `model_has_permissions`, `role_has_permissions` (staff only)
 - Sanctum: `personal_access_tokens` (customers only)
 - `settings`: key (unique), value (text), type (string, text, integer, decimal, boolean, json), group, label, description, is_public, is_encrypted, updated_by (system user), timestamps
-- Seeded (`php artisan db:seed`): staff roles and permissions below, and default settings `app.name`, `app.currency` (NGN), `app.currency_symbol` (₦), `app.timezone` (Africa/Lagos), `app.maintenance_mode` (false). No accounts or credentials are seeded. The settings seeder only adds missing keys, never overwriting staff edits.
+- Seeded (`php artisan db:seed`): every catalog permission and the built-in roles (default permissions apply only when a role is first created; later changes made in the admin area are kept; Super Admin always gets every permission), and default settings `app.name`, `app.currency` (NGN), `app.currency_symbol` (₦), `app.timezone` (Africa/Lagos), `app.maintenance_mode` (false). No accounts or credentials are seeded. The settings seeder only adds missing keys, never overwriting staff edits.
 
 ## Settings Store
 - Read/write through `App\Services\Settings\SettingsStore` (singleton): `get`, `set`, `has`, `forget`, `all`, `group`, plus `publicValues` (public, non-encrypted only). Values are cast by type; decimals stay strings (no precision loss). One cache entry, cleared on every write.
@@ -75,6 +77,12 @@ Action/Service layering, versioned API (`/api/v1`), thin controllers. See `docs/
 - Separate login throttling (5 failures per email + IP).
 - Disabled staff, or staff without a role, cannot sign in; a disabled account is signed out on its next request.
 - Roles and permissions (spatie, `admin` guard). Super Admin passes every check while active.
+
+## Roles & Permissions
+- Permission catalog: `App\Support\Enums\SystemPermission` (36 permissions, `<module>.<action>`), grouped by `App\Support\Permissions\PermissionModule` (16 modules: Dashboard, System Users, Roles & Permissions, Settings, Users, Wallet, Services, Providers, Payments, Transactions, Withdrawals, Referral & Commission, Notifications, Support, Reports, Audit / Activity Logs). Modules not built yet have permissions defined so roles can be prepared; they take effect when the module is built. Routes use `SystemPermission::X->middleware()`.
+- Built-in roles: Super Admin, Manager, Support, Finance, Viewer. Custom roles can be created. Each staff member has one role and gets only that role's permissions.
+- Safety rules (`App\Actions\Admin\Roles\RoleRules`, enforced even for Super Admin): the Super Admin role is locked (always every permission, cannot be edited or deleted); built-in role names are fixed and built-in roles cannot be deleted; a role still held by any staff member (including soft-deleted) cannot be deleted; staff other than Super Admin cannot edit the role they hold and can only grant or remove permissions they hold themselves. The last-active-Super-Admin protection from System Users still applies.
+- Limitation: spatie's `roles` table has no status, so roles cannot be enabled/disabled. To retire a custom role, move its staff to another role and delete it.
 - Management (`/admin/system-users`, permission `system-users.manage`, Super Admin only by default): one role per staff member; passwords set by the admin are hashed and never shown (edit leaves password blank to keep it). Safety rules in `App\Actions\Admin\SystemUsers\SystemUserRules`, enforced even for Super Admin: no self-deactivation, self-deletion or own-role change; the last active Super Admin cannot be deactivated, deleted or demoted; only a Super Admin can grant the Super Admin role or change a Super Admin account.
 - Delete is a soft delete: the account is disabled, hidden from the list, cannot sign in (an open session ends on the next request), and its email stays reserved. There is no restore screen yet.
 - No audit/activity log exists yet (Phase 16); staff-account changes are not recorded beyond timestamps.
@@ -88,8 +96,12 @@ Action/Service layering, versioned API (`/api/v1`), thin controllers. See `docs/
 | `system-users.manage` | ✓ | | | | |
 | `settings.view` | ✓ | | | | |
 | `settings.update` | ✓ | | | | |
+| `roles.view` / `roles.create` / `roles.update` / `roles.delete` | ✓ | | | | |
+| All other catalog permissions (future modules) | ✓ | | | | |
 
-Admin navigation (`App\Support\Admin\AdminModule`): each sidebar item and its page require the same permission. Dashboard = `admin.access`; Users = `customers.view`; Settings = `settings.view`; System Users and Roles & Permissions = `system-users.manage`. Every other module uses a **reserved** permission (`services.view`, `transactions.view`, `providers.view`, `payments.view`, `wallet.view`, `withdrawals.view`, `referrals.view`, `notifications.view`, `support.view`, `reports.view`) that is not seeded or granted yet, so only Super Admin sees those modules and the financial dashboard cards until each module is built and its permission approved. Result today: Super Admin sees all 15 items and all cards; Manager, Support, Finance and Viewer see Dashboard and Users, and only the Total Users card.
+These are the default grants; staff with `roles.update` can change them in the admin area.
+
+Admin navigation (`App\Support\Admin\AdminModule`): each sidebar item and its page require the same permission. Dashboard = `admin.access`; Users = `customers.view`; Settings = `settings.view`; System Users = `system-users.manage`; Roles & Permissions = `roles.view`. Every other module uses its `<module>.view` catalog permission (`services.view`, `transactions.view`, `providers.view`, `payments.view`, `wallet.view`, `withdrawals.view`, `referrals.view`, `notifications.view`, `support.view`, `reports.view`), stored but not granted to any built-in role by default, so only Super Admin sees those modules and the financial dashboard cards until a role is given access. Result today: Super Admin sees all 15 items and all cards; Manager, Support, Finance and Viewer see Dashboard and Users, and only the Total Users card.
 
 ## Existing frontend structure
 - `resources/css/theme.css` (navy/blue tokens), `resources/css/app.css`, `resources/js/app.js` (Alpine)
@@ -107,12 +119,13 @@ Admin navigation (`App\Support\Admin\AdminModule`): each sidebar item and its pa
 - `app/Support/Admin/AdminModule` (admin navigation registry), `app/Services/Admin/DashboardMetrics`, `app/Support/Money`
 - `app/Http/Controllers/Admin/{DashboardController, ModulePlaceholderController, SettingsController, SystemUserController}`
 - System Users: `app/Actions/Admin/SystemUsers/{SystemUserRules, CreateSystemUser, UpdateSystemUser, ChangeSystemUserStatus, DeleteSystemUser}`, `app/Http/Requests/Admin/SystemUsers/*`, views `admin/system-users/{index, create, edit, form}`
+- Roles & Permissions: `app/Http/Controllers/Admin/RoleController`, `app/Actions/Admin/Roles/{RoleRules, CreateRole, UpdateRole, DeleteRole}`, `app/Http/Requests/Admin/Roles/RoleRequest`, `app/Support/Permissions/PermissionModule`, views `admin/roles/{index, create, edit, matrix}`
 - Settings: `app/Models/Setting`, `app/Services/Settings/SettingsStore`, `app/Support/Enums/SettingType`, `app/Support/Settings/SettingDefinitions`, `app/Actions/Settings/UpdateSettings`, `app/Http/Requests/Admin/UpdateSettingsRequest`, `database/seeders/SettingsSeeder`
 - `app/Console/Commands/CreateSystemUserCommand`
 - Tests: `tests/Feature/{Auth, User, Admin, Api/V1}`, `tests/Unit/UserPhoneTest`
 
 ## Not built (by instruction)
-Admin module contents (Users and Roles & Permissions screens are later Phase 3 steps), services, plans, providers/APIs, wallet, payment gateways, referral, KYC, business API endpoints, cPanel deployment.
+Admin module contents (the customer Users screen is a later Phase 3 step), services, plans, providers/APIs, wallet, payment gateways, referral, KYC, business API endpoints, cPanel deployment.
 
 ## Problems / blockers
 1. cPanel PHP 8.3 availability unconfirmed. Check before Phase 20, or earlier if you already have a host.

@@ -25,9 +25,9 @@ class SystemUserRules
     }
 
     /** Only a Super Admin may grant the Super Admin role or change a Super Admin account. */
-    public function ensureCanTouch(SystemUser $actor, ?SystemUser $target = null, ?SystemRole $role = null): void
+    public function ensureCanTouch(SystemUser $actor, ?SystemUser $target = null, ?string $roleName = null): void
     {
-        $involvesSuperAdmin = $role === SystemRole::SuperAdmin || ($target?->isSuperAdmin() ?? false);
+        $involvesSuperAdmin = $roleName === SystemRole::SuperAdmin->value || ($target?->isSuperAdmin() ?? false);
 
         if ($involvesSuperAdmin && ! $actor->isSuperAdmin()) {
             throw new AuthorizationException('Only a Super Admin can manage Super Admin accounts.');

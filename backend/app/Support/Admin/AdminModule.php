@@ -7,12 +7,10 @@ use App\Support\Enums\SystemPermission;
 
 /**
  * Admin sidebar modules. Each one is guarded by a staff permission on the
- * `admin` guard; the sidebar and the route use the same permission.
- *
- * Modules not built yet are placeholders guarded by a *reserved* permission
- * (e.g. services.view). Reserved permissions are not seeded or granted to any
- * role yet, so only Super Admin (Gate::before) sees them until the module is
- * built and the permission is added to SystemPermission and granted.
+ * `admin` guard (see SystemPermission); the sidebar and the route use the same
+ * permission. Modules not built yet are placeholders: their permissions exist
+ * and can be granted to roles, but no default role holds them, so only Super
+ * Admin (Gate::before) sees them until a role is given access.
  */
 enum AdminModule: string
 {
@@ -56,31 +54,31 @@ enum AdminModule: string
     /** Permission needed to see the menu item and open the page. */
     public function permission(): string
     {
-        return match ($this) {
-            self::Dashboard => SystemPermission::AdminAccess->value,
-            self::Users => SystemPermission::CustomersView->value,
-            self::SystemUsers, self::Roles => SystemPermission::SystemUsersManage->value,
-            self::Settings => SystemPermission::SettingsView->value,
-            // Reserved, not granted to any role yet (Super Admin only).
-            self::Services => 'services.view',
-            self::Transactions => 'transactions.view',
-            self::Providers => 'providers.view',
-            self::Payments => 'payments.view',
-            self::Wallet => 'wallet.view',
-            self::Withdrawals => 'withdrawals.view',
-            self::Referrals => 'referrals.view',
-            self::Notifications => 'notifications.view',
-            self::Support => 'support.view',
-            self::Reports => 'reports.view',
-        };
+        return (match ($this) {
+            self::Dashboard => SystemPermission::AdminAccess,
+            self::Users => SystemPermission::CustomersView,
+            self::SystemUsers => SystemPermission::SystemUsersManage,
+            self::Roles => SystemPermission::RolesView,
+            self::Settings => SystemPermission::SettingsView,
+            self::Services => SystemPermission::ServicesView,
+            self::Transactions => SystemPermission::TransactionsView,
+            self::Providers => SystemPermission::ProvidersView,
+            self::Payments => SystemPermission::PaymentsView,
+            self::Wallet => SystemPermission::WalletView,
+            self::Withdrawals => SystemPermission::WithdrawalsView,
+            self::Referrals => SystemPermission::ReferralsView,
+            self::Notifications => SystemPermission::NotificationsView,
+            self::Support => SystemPermission::SupportView,
+            self::Reports => SystemPermission::ReportsView,
+        })->value;
     }
 
     /** Roadmap phase in which the module is built (see ROADMAP.md); null once it is built. */
     public function plannedPhase(): ?int
     {
         return match ($this) {
-            self::Dashboard, self::Settings, self::SystemUsers => null,
-            self::Users, self::Roles => 3,
+            self::Dashboard, self::Settings, self::SystemUsers, self::Roles => null,
+            self::Users => 3,
             self::Services => 5,
             self::Providers => 7,
             self::Transactions, self::Wallet => 8,

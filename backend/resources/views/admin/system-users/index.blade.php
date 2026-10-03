@@ -29,8 +29,8 @@
             <label for="role" class="mb-1 block text-xs font-medium text-navy-700">Role</label>
             <select id="role" name="role" class="block w-full rounded-lg border border-navy-200 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-200">
                 <option value="">All roles</option>
-                @foreach ($roles as $role)
-                    <option value="{{ $role->value }}" @selected(($filters['role'] ?? '') === $role->value)>{{ $role->label() }}</option>
+                @foreach ($roles as $roleName => $roleLabel)
+                    <option value="{{ $roleName }}" @selected(($filters['role'] ?? '') === $roleName)>{{ $roleLabel }}</option>
                 @endforeach
             </select>
         </div>
@@ -58,9 +58,8 @@
         @else
             <ul class="divide-y divide-navy-100" role="list">
                 @foreach ($staff as $member)
-                    @php($role = $member->primaryRole())
                     @php($isSelf = $actor->is($member))
-                    @php($canTouch = $actor->isSuperAdmin() || $role !== \App\Support\Enums\SystemRole::SuperAdmin)
+                    @php($canTouch = $actor->isSuperAdmin() || ! $member->isSuperAdmin())
                     <li class="flex flex-col gap-3 px-5 py-4 md:flex-row md:items-center" data-system-user="{{ $member->id }}">
                         <div class="min-w-0 flex-1">
                             <p class="truncate text-sm font-semibold text-navy-900">
@@ -70,7 +69,7 @@
                             <p class="truncate text-sm text-navy-600">{{ $member->email }}@if ($member->phone) · {{ $member->phone }}@endif</p>
                         </div>
                         <div class="flex flex-wrap items-center gap-2 text-xs md:w-64">
-                            <span class="rounded-full bg-brand-50 px-2.5 py-1 font-medium text-brand-800">{{ $role?->label() ?? 'No role' }}</span>
+                            <span class="rounded-full bg-brand-50 px-2.5 py-1 font-medium text-brand-800">{{ $member->roleLabels() ?: 'No role' }}</span>
                             @if ($member->isActive())
                                 <span class="rounded-full bg-green-50 px-2.5 py-1 font-medium text-green-800">Active</span>
                             @else

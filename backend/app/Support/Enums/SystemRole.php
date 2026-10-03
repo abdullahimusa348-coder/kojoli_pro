@@ -25,8 +25,10 @@ enum SystemRole: string
     }
 
     /**
-     * Permissions granted to each role. Super Admin is listed for completeness
-     * but passes every check through Gate::before regardless.
+     * Default permissions for each built-in role, applied when the role is first
+     * created. Staff with roles.update can change them later in the admin area
+     * (except Super Admin, which always has every permission and passes every
+     * check through Gate::before).
      *
      * @return list<string>
      */
@@ -50,6 +52,17 @@ enum SystemRole: string
                 SystemPermission::CustomersView->value,
             ],
         };
+    }
+
+    /** Display name for any admin role name: built-in label, or the custom role's own name. */
+    public static function labelFor(string $name): string
+    {
+        return self::tryFrom($name)?->label() ?? $name;
+    }
+
+    public static function isBuiltIn(string $name): bool
+    {
+        return self::tryFrom($name) !== null;
     }
 
     /** @return list<string> */

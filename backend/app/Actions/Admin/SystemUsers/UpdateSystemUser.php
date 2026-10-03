@@ -18,8 +18,8 @@ class UpdateSystemUser
      */
     public function handle(SystemUser $staff, array $data, SystemUser $actor): SystemUser
     {
-        $role = SystemRole::from($data['role']);
-        $currentRole = $staff->primaryRole();
+        $role = $data['role'];
+        $currentRole = $staff->primaryRoleName();
 
         $this->rules->authorize($actor);
         $this->rules->ensureCanTouch($actor, $staff, $role);
@@ -28,7 +28,7 @@ class UpdateSystemUser
             if ($actor->is($staff)) {
                 throw ValidationException::withMessages(['role' => 'You cannot change your own role.']);
             }
-            if ($currentRole === SystemRole::SuperAdmin) {
+            if ($currentRole === SystemRole::SuperAdmin->value) {
                 $this->rules->ensureNotLastActiveSuperAdmin($staff, 'This is the only active Super Admin; their role cannot be changed.');
             }
         }
@@ -47,7 +47,7 @@ class UpdateSystemUser
             }
 
             $staff->save();
-            $staff->syncRoles([$role->value]);
+            $staff->syncRoles([$role]);
 
             return $staff;
         });

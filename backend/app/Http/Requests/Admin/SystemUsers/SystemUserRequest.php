@@ -3,7 +3,6 @@
 namespace App\Http\Requests\Admin\SystemUsers;
 
 use App\Models\SystemUser;
-use App\Support\Enums\SystemRole;
 use App\Support\Validation\AccountRules;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -36,7 +35,8 @@ abstract class SystemUserRequest extends FormRequest
             // Deleted staff keep their email reserved (unique across all rows).
             'email' => ['required', 'string', 'lowercase', 'email', 'max:255', Rule::unique(SystemUser::class, 'email')->ignore($ignore)],
             'phone' => ['nullable', 'string', 'regex:'.AccountRules::PHONE_REGEX, Rule::unique(SystemUser::class, 'phone')->ignore($ignore)],
-            'role' => ['required', 'string', Rule::in(SystemRole::values())],
+            // Any staff role (built-in or custom) on the admin guard.
+            'role' => ['required', 'string', Rule::exists('roles', 'name')->where('guard_name', 'admin')],
             'password' => [$this->passwordRequired() ? 'required' : 'nullable', 'confirmed', Password::defaults()],
         ];
     }

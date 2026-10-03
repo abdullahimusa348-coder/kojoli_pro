@@ -3,7 +3,6 @@
 namespace App\Actions\Admin\SystemUsers;
 
 use App\Models\SystemUser;
-use App\Support\Enums\SystemRole;
 use App\Support\Enums\UserStatus;
 use Illuminate\Support\Facades\DB;
 
@@ -12,14 +11,14 @@ class CreateSystemUser
     public function __construct(private SystemUserRules $rules) {}
 
     /**
-     * @param  array{name: string, email: string, phone?: ?string, password: string, role: string, status?: string}  $data
+     * @param  array{name: string, email: string, phone?: ?string, password: string, role: string, status?: string}  $data  role is an admin-guard role name (built-in or custom)
      */
     public function handle(array $data, SystemUser $actor): SystemUser
     {
-        $role = SystemRole::from($data['role']);
+        $role = $data['role'];
 
         $this->rules->authorize($actor);
-        $this->rules->ensureCanTouch($actor, role: $role);
+        $this->rules->ensureCanTouch($actor, roleName: $role);
 
         return DB::transaction(function () use ($data, $role) {
             $staff = new SystemUser([
@@ -31,7 +30,7 @@ class CreateSystemUser
             $staff->status = UserStatus::tryFrom($data['status'] ?? '') ?? UserStatus::Active;
             $staff->save();
 
-            $staff->syncRoles([$role->value]);
+            $staff->syncRoles([$role]);
 
             return $staff;
         });

@@ -16,6 +16,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
+use Spatie\Permission\Models\Role;
 
 /**
  * Staff (System User) management. Routes require system-users.manage; the
@@ -27,7 +28,7 @@ class SystemUserController extends Controller
     {
         $filters = $request->validate([
             'q' => ['nullable', 'string', 'max:100'],
-            'role' => ['nullable', Rule::in(SystemRole::values())],
+            'role' => ['nullable', 'string', Rule::exists('roles', 'name')->where('guard_name', 'admin')],
             'status' => ['nullable', Rule::enum(UserStatus::class)],
         ]);
 
@@ -48,7 +49,7 @@ class SystemUserController extends Controller
         return view('admin.system-users.index', [
             'staff' => $staff,
             'filters' => $filters,
-            'roles' => SystemRole::cases(),
+            'roles' => $this->roleOptions(),
             'actor' => $request->user('admin'),
         ]);
     }
@@ -101,12 +102,32 @@ class SystemUserController extends Controller
         return redirect()->route('admin.system-users')->with('status', "{$systemUser->name} deleted.");
     }
 
-    /** Super Admin can be granted only by a Super Admin. @return list<SystemRole> */
+    /**
+     * Staff roles (built-in first, then custom) as name => label.
+     *
+     * @return array<string, string>
+     */
+    private function roleOptions(): array
+    {
+        $builtIn = SystemRole::values();
+
+        return Role::where('guard_name', 'admin')->pluck('name')
+            ->sortBy(fn (string $name) => [in_array($name, $builtIn, true) ? 0 : 1, array_search($name, $builtIn, true), mb_strtolower($name)])
+            ->mapWithKeys(fn (string $name) => [$name => SystemRole::labelFor($name)])
+            ->all();
+    }
+
+    /**
+     * Super Admin can be granted only by a Super Admin.
+     *
+     * @return array<string, string>
+     */
     private function assignableRoles(SystemUser $actor): array
     {
-        return array_values(array_filter(
-            SystemRole::cases(),
-            fn (SystemRole $role) => $role !== SystemRole::SuperAdmin || $actor->isSuperAdmin(),
-        ));
+        return array_filter(
+            $this->roleOptions(),
+            fn (string $name) => $name !== SystemRole::SuperAdmin->value || $actor->isSuperAdmin(),
+            ARRAY_FILTER_USE_KEY,
+        );
     }
 }
