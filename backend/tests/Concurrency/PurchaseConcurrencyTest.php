@@ -297,3 +297,146 @@ it('produces exactly one outcome when concurrent re-checks get conflicting answe
         ->and(Wallet::where('user_id', $purchase->user_id)->sole()->balance_kobo)->toBe($purchase->status === PurchaseStatus::Failed ? 100_000 : 90_000);
     pucSettledOnce($purchase);
 });
+
+/*
+ * CP7: races through the customer Buy form (HTTP kernel, signed-in customer), against wallet
+ * credits and refunds, a price change and a wallet freeze. Tests only; no application changes.
+ */
+
+it('turns a parallel double submit of one confirmed Buy form into one purchase, one debit and one provider call', function () {
+    $plan = puxPlan('data', 10_000);
+    puxRoute($plan);
+    $user = puxCustomer(100_000);
+    $token = (string) Str::uuid();
+
+    $results = collect(pucRace(array_fill(0, 10, ['submit', $user->id, $plan->id, 3, "data|{$token}|+234 801 234 5678|10000", 'succeeded', 50])));
+
+    $purchase = Purchase::sole();
+    expect($results)->toHaveCount(30)
+        ->and($results->where('result', '!=', 'ok')->values()->all())->toBe([])
+        ->and($results->pluck('reference')->unique()->values()->all())->toBe([$purchase->reference])
+        ->and($purchase->recipient)->toBe('08012345678')
+        ->and($purchase->amount_kobo)->toBe(10_000)
+        ->and($purchase->status)->toBe(PurchaseStatus::Successful)
+        ->and(Transaction::where('type', 'purchase')->count())->toBe(1)
+        ->and(PurchaseAttempt::count())->toBe(1)
+        ->and(Wallet::where('user_id', $user->id)->sole()->balance_kobo)->toBe(90_000);
+    pucPurchaseConsistent($purchase);
+    pucWalletConsistent($user->id);
+});
+
+it('lets only one of many parallel Buy forms reusing one token with different details through', function () {
+    $plan = puxPlan('data', 10_000);
+    puxRoute($plan);
+    $user = puxCustomer(100_000);
+    $token = (string) Str::uuid();
+    $phones = array_map(fn ($i) => '0801234560'.$i, range(0, 9));
+
+    $results = collect(pucRace(array_map(fn ($phone) => ['submit', $user->id, $plan->id, 2, "data|{$token}|{$phone}|10000", 'succeeded', 30], $phones)));
+
+    $purchase = Purchase::sole();
+    $winners = $results->where('result', 'ok');
+    expect($results)->toHaveCount(20)
+        ->and($results->where('result', 'error')->values()->all())->toBe([])
+        ->and($winners->pluck('phone')->unique()->values()->all())->toBe([$purchase->recipient])
+        ->and($winners->pluck('reference')->unique()->values()->all())->toBe([$purchase->reference])
+        ->and($results->where('result', 'refused')->count())->toBe(18)
+        ->and($results->where('result', 'refused')->pluck('message')->unique()->values()->all())
+        ->toBe(['This request was already used for a different purchase. Please start again.'])
+        ->and(Transaction::where('type', 'purchase')->count())->toBe(1)
+        ->and(PurchaseAttempt::count())->toBe(1)
+        ->and(Wallet::where('user_id', $user->id)->sole()->balance_kobo)->toBe(90_000);
+    pucPurchaseConsistent($purchase);
+    pucWalletConsistent($user->id);
+});
+
+it('keeps one wallet exact while purchases, definite-failure refunds and credits race', function () {
+    $plan = puxPlan('data', 10_000);
+    puxRoute($plan);
+    $user = puxCustomer(200_000);
+
+    $results = collect(pucRace([
+        ...array_fill(0, 3, ['buy', $user->id, $plan->id, 10, 'ok', 'succeeded', 10]),
+        ...array_fill(0, 3, ['buy', $user->id, $plan->id, 10, 'fail', 'failed_definite', 10]),
+        ...array_fill(0, 2, ['credit', $user->id, 1_000, 10, '-', '-', 0]),
+    ]));
+
+    $successful = Purchase::where('status', PurchaseStatus::Successful)->count();
+    $failed = Purchase::where('status', PurchaseStatus::Failed)->count();
+    expect($results)->toHaveCount(80)
+        ->and($results->where('result', 'error')->values()->all())->toBe([])
+        ->and($results->where('result', 'credited')->count())->toBe(20)
+        ->and(Purchase::count())->toBe($successful + $failed) // nothing left pending
+        ->and($results->where('result', 'refused')->count())->toBe(60 - Purchase::count())
+        ->and(Transaction::where('type', 'purchase')->where('direction', 'debit')->count())->toBe(Purchase::count())
+        ->and(Transaction::where('type', 'purchase')->where('direction', 'credit')->count())->toBe($failed)
+        ->and(PurchaseAttempt::count())->toBe(Purchase::count())
+        ->and(Wallet::where('user_id', $user->id)->sole()->balance_kobo)->toBe(200_000 + 20 * 1_000 - 10_000 * $successful);
+    foreach (Purchase::all() as $purchase) {
+        pucPurchaseConsistent($purchase);
+    }
+    pucWalletConsistent($user->id);
+});
+
+it('charges every purchase exactly its confirmed price while the price changes mid-race', function () {
+    $plan = puxPlan('data', 10_000);
+    puxRoute($plan);
+    $user = puxCustomer(1_000_000);
+
+    $results = collect(pucRace([
+        ...array_fill(0, 4, ['submit', $user->id, $plan->id, 10, 'data|unique|08012345678|10000', 'succeeded', 30]),
+        ...array_fill(0, 4, ['submit', $user->id, $plan->id, 10, 'data|unique|08012345678|12000', 'succeeded', 30]),
+        ['reprice', $user->id, $plan->id, 1, '12000', '-', 120],
+    ]));
+
+    $ok = $results->where('result', 'ok');
+    $refused = $results->where('result', 'refused');
+    expect($results)->toHaveCount(81)
+        ->and($results->where('result', 'error')->values()->all())->toBe([])
+        ->and($results->where('result', 'repriced')->count())->toBe(1)
+        ->and($ok->count() + $refused->count())->toBe(80)
+        ->and($refused->pluck('message')->unique()->values()->all())->toBe(['The price has changed. Please review the new price and confirm again.'])
+        ->and($ok->where('confirmed', 10_000)->count())->toBeGreaterThan(0) // bought before the change
+        ->and($ok->where('confirmed', 12_000)->count())->toBeGreaterThan(0) // bought after it
+        ->and(Purchase::count())->toBe($ok->count())
+        ->and(Transaction::where('type', 'purchase')->count())->toBe($ok->count())
+        ->and(PurchaseAttempt::count())->toBe($ok->count())
+        ->and(Wallet::where('user_id', $user->id)->sole()->balance_kobo)->toBe(1_000_000 - $ok->sum('confirmed'));
+    foreach ($ok as $row) {
+        $purchase = Purchase::where('reference', $row['reference'])->sole();
+        expect($purchase->amount_kobo)->toBe($row['confirmed'])
+            ->and(Transaction::whereKey($purchase->debit_transaction_id)->sole()->amount_kobo)->toBe($row['confirmed']);
+        pucPurchaseConsistent($purchase);
+    }
+    pucWalletConsistent($user->id);
+});
+
+it('commits no purchase debit after a wallet freeze that races with purchases', function () {
+    $plan = puxPlan('data', 10_000);
+    puxRoute($plan);
+    $user = puxCustomer(1_000_000);
+
+    $results = collect(pucRace([
+        ...array_fill(0, 6, ['buy', $user->id, $plan->id, 10, 'f', 'succeeded', 20]),
+        ['freeze', $user->id, 0, 1, '-', '-', 100],
+    ]));
+
+    $freeze = $results->firstWhere('result', 'frozen');
+    $refused = $results->where('result', 'refused');
+    expect($results)->toHaveCount(61)
+        ->and($results->where('result', 'error')->values()->all())->toBe([])
+        ->and($freeze)->not->toBeNull()
+        ->and(Purchase::count())->toBeGreaterThan(0) // some bought before the freeze
+        ->and($refused->count())->toBeGreaterThan(0) // and some were blocked by it
+        ->and($refused->pluck('message')->unique()->values()->all())->toBe(['This wallet is frozen; debits are blocked.'])
+        ->and(Purchase::count())->toBe(60 - $refused->count()) // a blocked purchase leaves no row
+        ->and(PurchaseAttempt::count())->toBe(Purchase::count()) // and makes no provider call
+        ->and(Transaction::where('type', 'purchase')->count())->toBe(Purchase::count())
+        ->and(WalletLedgerEntry::where('id', '>', $freeze['max_entry_id'])->count())->toBe(0)
+        ->and(Wallet::where('user_id', $user->id)->sole()->balance_kobo)->toBe(1_000_000 - 10_000 * Purchase::count());
+    foreach (Purchase::all() as $purchase) {
+        expect($purchase->status)->toBe(PurchaseStatus::Successful);
+        pucPurchaseConsistent($purchase);
+    }
+    pucWalletConsistent($user->id);
+});
