@@ -14,3 +14,6 @@ Schedule::command('sanctum:prune-expired --hours=24')->daily();
 // Payments: recheck pending payments with their gateway, and clear old webhook payloads.
 Schedule::command('payments:reconcile')->everyFiveMinutes()->withoutOverlapping(10);
 Schedule::command('payments:prune-webhooks')->daily();
+
+// Purchases: re-check purchases with an unclear provider outcome.
+Schedule::command('purchases:reconcile')->everyFiveMinutes()->withoutOverlapping(10);

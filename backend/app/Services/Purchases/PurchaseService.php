@@ -14,6 +14,7 @@ use App\Models\User;
 use App\Models\Wallet;
 use App\Services\Pricing\PriceResolver;
 use App\Services\Providers\Data\ProviderPurchaseRequest;
+use App\Services\Providers\Data\ProviderQueryRequest;
 use App\Services\Providers\Data\ProviderResult;
 use App\Services\Providers\ProviderAdapterRegistry;
 use App\Services\Providers\ProviderCaller;
@@ -27,6 +28,7 @@ use App\Support\Purchases\PurchaseStatus;
 use App\Support\Wallet\LedgerEntryType;
 use App\Support\Wallet\TransactionType;
 use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -272,16 +274,7 @@ class PurchaseService
             ])->save();
 
             if ($status === PurchaseAttemptStatus::Succeeded && $locked->status === PurchaseStatus::Pending) {
-                $cost = $current->costKobo($locked->face_value_kobo);
-
-                return $this->transition($locked, PurchaseStatus::Successful, PurchaseSource::Execution, [
-                    'successful_attempt_id' => $current->id,
-                    'cost_kobo' => $cost,
-                    'margin_kobo' => $cost === null ? null : $locked->amount_kobo - $cost,
-                    'failure_reason' => null,
-                    'next_check_at' => null,
-                    'completed_at' => now(),
-                ]);
+                return $this->succeedLocked($locked, $current, PurchaseSource::Execution);
             }
             if ($status === PurchaseAttemptStatus::Unknown) {
                 $locked->forceFill(['next_check_at' => now()->addMinutes(config('purchases.recheck_schedule_minutes')[0])])->save();
@@ -308,16 +301,8 @@ class PurchaseService
                     return $locked; // something may have been delivered: never refund
                 }
 
-                $refund = $this->wallets->credit(Wallet::findOrFail($locked->wallet_id), $locked->amount_kobo, LedgerEntryType::PurchaseRefund,
-                    TransactionType::Purchase, "Refund: {$locked->service_name}: {$locked->plan_name}", 'purchase-refund:'.$locked->reference, null,
-                    ['purchase' => $locked->reference]);
-
-                return $this->transition($locked, PurchaseStatus::Failed, PurchaseSource::Execution, [
-                    'refund_transaction_id' => $refund->transaction->id,
-                    'failure_reason' => $attempts->isEmpty() ? 'No provider was available.' : 'Every provider declined the purchase.',
-                    'next_check_at' => null,
-                    'completed_at' => now(),
-                ]);
+                return $this->refundLocked($locked, PurchaseSource::Execution,
+                    $attempts->isEmpty() ? 'No provider was available.' : 'Every provider declined the purchase.');
             }, 3);
         } catch (WalletException $e) {
             // The refund could not be posted (should not happen); keep it pending and visible, never lose it.
@@ -325,6 +310,203 @@ class PurchaseService
 
             return $purchase->fresh();
         }
+    }
+
+    /**
+     * Re-checks one pending or review purchase (scheduler or staff; same logic).
+     * - An attempt with an unknown outcome is queried with the provider's
+     *   documented status lookup, outside any database lock, and the result is
+     *   applied under the purchase row lock: succeeded -> successful;
+     *   failed_definite -> failed with exactly one refund, never a failover
+     *   after an unclear attempt; unknown or no lookup -> stays as it is and
+     *   the next check is scheduled; review after review_after_hours.
+     * - An attempt left "started" past stale_attempt_minutes (interrupted call)
+     *   is treated as unknown first.
+     * - A pending purchase with nothing unclear (no attempt yet, or every
+     *   attempt failed definitely) simply continues normal execution.
+     * Review never refunds or fails over on its own.
+     */
+    public function recheck(Purchase $purchase, PurchaseSource $source, ?SystemUser $actor = null): Purchase
+    {
+        $purchase = $purchase->fresh();
+        if (! in_array($purchase->status, [PurchaseStatus::Pending, PurchaseStatus::Review], true)) {
+            return $purchase;
+        }
+        $this->expireStaleAttempt($purchase);
+
+        $attempts = PurchaseAttempt::where('purchase_id', $purchase->id)->get();
+        if ($attempts->contains(fn (PurchaseAttempt $a) => $a->status === PurchaseAttemptStatus::Started)) {
+            return $purchase; // a provider call is still in flight
+        }
+        $unknown = $attempts->first(fn (PurchaseAttempt $a) => $a->status === PurchaseAttemptStatus::Unknown);
+        if ($unknown === null) {
+            return $purchase->status === PurchaseStatus::Pending ? $this->execute($purchase) : $purchase;
+        }
+
+        $result = null;
+        $adapter = $this->registry->adapterFor($unknown->provider);
+        if ($adapter !== null && $adapter->canQuery()) {
+            try {
+                $result = $this->caller->query($adapter, new ProviderQueryRequest(
+                    $unknown->request_reference, $unknown->provider_reference, $purchase->plan->product->service->slug,
+                ), $this->registry->contextFor($unknown->provider));
+            } catch (ProviderNotConfigured) {
+                $result = null;
+            }
+        }
+
+        return $this->applyRecheck($purchase, $unknown, $result, $source, $actor);
+    }
+
+    /**
+     * Re-checks the purchases that are due, oldest first, in one small batch.
+     *
+     * @return array{checked: int, settled: int, review: int, errors: int}
+     */
+    public function reconcile(): array
+    {
+        $stats = ['checked' => 0, 'settled' => 0, 'review' => 0, 'errors' => 0];
+        $minAge = now()->subMinutes(config('purchases.reconcile_min_age_minutes'));
+        $due = Purchase::whereIn('status', [PurchaseStatus::Pending->value, PurchaseStatus::Review->value])
+            ->where(fn ($q) => $q->where('next_check_at', '<=', now())
+                ->orWhere(fn ($q) => $q->whereNull('next_check_at')->where('created_at', '<=', $minAge)))
+            ->orderByRaw('COALESCE(next_check_at, created_at)')->orderBy('id')
+            ->limit(config('purchases.reconcile_batch'))->get();
+
+        foreach ($due as $purchase) {
+            $stats['checked']++;
+            $before = $purchase->status;
+            try {
+                $after = $this->recheck($purchase, PurchaseSource::Reconcile);
+            } catch (\Throwable $e) {
+                $stats['errors']++;
+                Log::error('Purchase re-check failed', ['purchase' => $purchase->reference, 'exception' => $e::class]);
+
+                continue;
+            }
+            if ($after->isFinal()) {
+                $stats['settled']++;
+            } elseif ($after->status === PurchaseStatus::Review && $before !== PurchaseStatus::Review) {
+                $stats['review']++;
+            }
+        }
+
+        return $stats;
+    }
+
+    /** Applies a re-check result under the purchase row lock. A null result means no documented lookup was possible. */
+    private function applyRecheck(Purchase $purchase, PurchaseAttempt $unknown, ?ProviderResult $result, PurchaseSource $source, ?SystemUser $actor): Purchase
+    {
+        try {
+            return DB::transaction(function () use ($purchase, $unknown, $result, $source, $actor) {
+                $locked = Purchase::whereKey($purchase->id)->lockForUpdate()->firstOrFail();
+                $attempt = PurchaseAttempt::whereKey($unknown->id)->firstOrFail();
+                if (! in_array($locked->status, [PurchaseStatus::Pending, PurchaseStatus::Review], true) || $attempt->status !== PurchaseAttemptStatus::Unknown) {
+                    return $locked; // settled by a parallel re-check
+                }
+
+                $attempt->forceFill(['last_checked_at' => now()]);
+                if ($attempt->provider_reference === null && $result?->providerReference !== null) {
+                    $attempt->provider_reference = $result->providerReference;
+                }
+
+                if ($result?->outcome === ProviderOutcome::Succeeded) {
+                    $attempt->forceFill(['status' => PurchaseAttemptStatus::Succeeded, 'error_code' => null, 'error_message' => null])->save();
+
+                    return $this->succeedLocked($locked, $attempt, $source, $actor);
+                }
+                if ($result?->outcome === ProviderOutcome::FailedDefinite) {
+                    $attempt->forceFill(['status' => PurchaseAttemptStatus::FailedDefinite, 'error_code' => $result->errorCode, 'error_message' => $result->message])->save();
+                    $others = PurchaseAttempt::where('purchase_id', $locked->id)->where('id', '!=', $attempt->id)->get();
+                    if ($others->contains(fn (PurchaseAttempt $a) => $a->status !== PurchaseAttemptStatus::FailedDefinite)) {
+                        return $locked; // never refund while anything else may have been delivered
+                    }
+
+                    // No failover after an attempt that was unclear: refund instead.
+                    return $this->refundLocked($locked, $source, 'The provider confirmed the purchase failed.', $actor);
+                }
+
+                if ($result !== null) {
+                    $attempt->forceFill(['error_code' => $result->errorCode, 'error_message' => $result->message]);
+                }
+                $attempt->save();
+
+                $locked->forceFill(['check_count' => $locked->check_count + 1]);
+                $locked->next_check_at = $this->nextCheckAt($locked, $attempt);
+                if ($locked->status === PurchaseStatus::Pending && $locked->created_at->copy()->addHours(config('purchases.review_after_hours'))->isPast()) {
+                    return $this->transition($locked, PurchaseStatus::Review, $source,
+                        ['failure_reason' => 'No definite provider outcome after '.config('purchases.review_after_hours').' hours.'], $actor);
+                }
+                $locked->save();
+
+                return $locked;
+            }, 3);
+        } catch (WalletException $e) {
+            Log::error('Purchase refund could not be posted', ['purchase' => $purchase->reference, 'reason' => $e->getMessage()]);
+
+            return $purchase->fresh();
+        }
+    }
+
+    /** Next check: the approved offsets after the unclear attempt, then a fixed interval. */
+    private function nextCheckAt(Purchase $locked, PurchaseAttempt $attempt): Carbon
+    {
+        $schedule = config('purchases.recheck_schedule_minutes');
+        $base = $attempt->finished_at ?? $attempt->started_at;
+        if ($locked->check_count < count($schedule)) {
+            $at = $base->copy()->addMinutes($schedule[$locked->check_count]);
+
+            return $at->isPast() ? now() : $at;
+        }
+
+        return now()->addMinutes(config('purchases.recheck_every_minutes'));
+    }
+
+    /** Turns an attempt left "started" (interrupted call) into unknown, so it can be re-checked. */
+    private function expireStaleAttempt(Purchase $purchase): void
+    {
+        DB::transaction(function () use ($purchase) {
+            Purchase::whereKey($purchase->id)->lockForUpdate()->firstOrFail();
+            $stale = PurchaseAttempt::where('purchase_id', $purchase->id)->where('status', PurchaseAttemptStatus::Started->value)
+                ->where('started_at', '<=', now()->subMinutes(config('purchases.stale_attempt_minutes')))->first();
+            $stale?->forceFill(['status' => PurchaseAttemptStatus::Unknown, 'error_code' => 'interrupted',
+                'error_message' => 'The provider call did not complete.', 'finished_at' => now()])->save();
+        }, 3);
+    }
+
+    /** Marks a locked pending/review purchase successful through its delivering attempt, with cost and margin from the route snapshot. */
+    private function succeedLocked(Purchase $locked, PurchaseAttempt $attempt, PurchaseSource $source, ?SystemUser $actor = null): Purchase
+    {
+        $cost = $attempt->costKobo($locked->face_value_kobo);
+
+        return $this->transition($locked, PurchaseStatus::Successful, $source, [
+            'successful_attempt_id' => $attempt->id,
+            'cost_kobo' => $cost,
+            'margin_kobo' => $cost === null ? null : $locked->amount_kobo - $cost,
+            'failure_reason' => null,
+            'next_check_at' => null,
+            'completed_at' => now(),
+        ], $actor);
+    }
+
+    /**
+     * Fails a locked purchase whose attempts all failed definitely, with the
+     * single compensating refund through WalletService, in the caller's
+     * transaction. A repeated call is a no-op (status check, wallet key and
+     * unique refund link).
+     */
+    private function refundLocked(Purchase $locked, PurchaseSource $source, string $reason, ?SystemUser $actor = null): Purchase
+    {
+        $refund = $this->wallets->credit(Wallet::findOrFail($locked->wallet_id), $locked->amount_kobo, LedgerEntryType::PurchaseRefund,
+            TransactionType::Purchase, "Refund: {$locked->service_name}: {$locked->plan_name}", 'purchase-refund:'.$locked->reference, null,
+            ['purchase' => $locked->reference]);
+
+        return $this->transition($locked, PurchaseStatus::Failed, $source, [
+            'refund_transaction_id' => $refund->transaction->id,
+            'failure_reason' => $reason,
+            'next_check_at' => null,
+            'completed_at' => now(),
+        ], $actor);
     }
 
     /** @param  array<string, mixed>  $attributes */

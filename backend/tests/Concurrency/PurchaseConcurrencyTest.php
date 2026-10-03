@@ -2,14 +2,19 @@
 
 use App\Models\Purchase;
 use App\Models\PurchaseAttempt;
+use App\Models\PurchaseStatusChange;
+use App\Models\SystemUser;
 use App\Models\Transaction;
 use App\Models\Wallet;
 use App\Models\WalletLedgerEntry;
 use App\Support\Purchases\PurchaseAttemptStatus;
 use App\Support\Purchases\PurchaseStatus;
+use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Str;
+use Tests\Support\Providers\FakeProvider;
 
 require_once __DIR__.'/../Support/Purchases/helpers.php';
 
@@ -196,4 +201,99 @@ it('never fails over or refunds when parallel executions meet an unknown outcome
         ->and(Wallet::where('user_id', $user->id)->sole()->balance_kobo)->toBe(90_000);
     pucPurchaseConsistent($purchase);
     pucWalletConsistent($user->id);
+});
+
+/** A debited purchase whose first route answered unclearly and whose re-check is due; route 2 must never be tried. */
+function pucUnclear(): Purchase
+{
+    $plan = puxPlan('data', 10_000);
+    puxRoute($plan, 1);
+    puxRoute($plan, 2);
+    FakeProvider::$purchaseScript = ['timeout'];
+    $purchase = puxService()->purchase(puxCustomer(100_000), $plan, '08012345678', null, (string) Str::uuid());
+    $purchase->forceFill(['next_check_at' => now()->subMinute()])->save();
+
+    return $purchase->fresh();
+}
+
+function pucStaff(): SystemUser
+{
+    (new RolesAndPermissionsSeeder)->run();
+    $staff = SystemUser::factory()->create();
+    $staff->assignRole('super-admin');
+
+    return $staff;
+}
+
+/** Exactly one move to a final status, and nothing tried on route 2. */
+function pucSettledOnce(Purchase $purchase): void
+{
+    $purchase->refresh();
+    expect(PurchaseStatusChange::where('purchase_id', $purchase->id)->whereIn('new_status', ['successful', 'failed'])->count())->toBe($purchase->isFinal() ? 1 : 0)
+        ->and(PurchaseAttempt::where('purchase_id', $purchase->id)->count())->toBe(1);
+    pucPurchaseConsistent($purchase);
+    pucWalletConsistent($purchase->user_id);
+}
+
+it('settles a success once when scheduled reconciliation and staff re-checks race', function () {
+    $purchase = pucUnclear();
+    $staff = pucStaff();
+
+    $results = collect(pucRace([
+        ...array_fill(0, 5, ['reconcile', 0, 0, 2, '-', 'succeeded,succeeded', 60]),
+        ...array_fill(0, 5, ['recheck', $staff->id, $purchase->id, 2, '-', 'succeeded,succeeded', 60]),
+    ]));
+
+    expect($results->where('result', 'error')->values()->all())->toBe([])
+        ->and($purchase->fresh()->status)->toBe(PurchaseStatus::Successful)
+        ->and(Transaction::where('idempotency_key', 'purchase-refund:'.$purchase->reference)->count())->toBe(0)
+        ->and(Wallet::where('user_id', $purchase->user_id)->sole()->balance_kobo)->toBe(90_000);
+    pucSettledOnce($purchase);
+});
+
+it('refunds exactly once when duplicate reconciliation runs see a definite failure', function () {
+    $purchase = pucUnclear();
+
+    $results = collect(pucRace(array_fill(0, 10, ['reconcile', 0, 0, 3, '-', 'failed_definite,failed_definite,failed_definite', 40])));
+
+    expect($results->where('result', 'error')->values()->all())->toBe([])
+        ->and($purchase->fresh()->status)->toBe(PurchaseStatus::Failed)
+        ->and(Transaction::where('idempotency_key', 'purchase-refund:'.$purchase->reference)->count())->toBe(1)
+        ->and(Wallet::where('user_id', $purchase->user_id)->sole()->balance_kobo)->toBe(100_000);
+    pucSettledOnce($purchase);
+});
+
+it('never refunds or fails over when parallel re-checks keep getting unknown', function () {
+    $purchase = pucUnclear();
+    $staff = pucStaff();
+
+    $results = collect(pucRace([
+        ...array_fill(0, 5, ['reconcile', 0, 0, 3, '-', 'unknown,unknown,unknown', 30]),
+        ...array_fill(0, 5, ['recheck', $staff->id, $purchase->id, 3, '-', 'unknown,unknown,unknown', 30]),
+    ]));
+
+    expect($results->where('result', 'error')->values()->all())->toBe([])
+        ->and($purchase->fresh()->status)->toBe(PurchaseStatus::Pending)
+        ->and($purchase->fresh()->check_count)->toBeGreaterThanOrEqual(1)
+        ->and(Transaction::where('idempotency_key', 'purchase-refund:'.$purchase->reference)->count())->toBe(0)
+        ->and(Wallet::where('user_id', $purchase->user_id)->sole()->balance_kobo)->toBe(90_000);
+    pucSettledOnce($purchase);
+});
+
+it('produces exactly one outcome when concurrent re-checks get conflicting answers', function () {
+    $purchase = pucUnclear();
+    $staff = pucStaff();
+
+    $results = collect(pucRace([
+        ...array_fill(0, 5, ['recheck', $staff->id, $purchase->id, 2, '-', 'succeeded,succeeded', 50]),
+        ...array_fill(0, 5, ['reconcile', 0, 0, 2, '-', 'failed_definite,failed_definite', 50]),
+    ]));
+
+    $purchase->refresh();
+    $refunds = Transaction::where('idempotency_key', 'purchase-refund:'.$purchase->reference)->count();
+    expect($results->where('result', 'error')->values()->all())->toBe([])
+        ->and($purchase->status)->toBeIn([PurchaseStatus::Successful, PurchaseStatus::Failed])
+        ->and($refunds)->toBe($purchase->status === PurchaseStatus::Failed ? 1 : 0)
+        ->and(Wallet::where('user_id', $purchase->user_id)->sole()->balance_kobo)->toBe($purchase->status === PurchaseStatus::Failed ? 100_000 : 90_000);
+    pucSettledOnce($purchase);
 });

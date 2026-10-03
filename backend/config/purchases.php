@@ -17,4 +17,13 @@ return [
     'recheck_every_minutes' => 360,
     'review_after_hours' => 24,
 
+    // A "started" attempt older than this (an interrupted provider call) is
+    // treated as unknown and re-checked; it is never retried.
+    'stale_attempt_minutes' => 10,
+
+    // purchases:reconcile (every five minutes): purchases checked per run, and
+    // the minimum age of a pending purchase that has no check scheduled yet.
+    'reconcile_batch' => 50,
+    'reconcile_min_age_minutes' => 2,
+
 ];
