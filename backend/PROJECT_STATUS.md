@@ -1,12 +1,13 @@
 # PROJECT STATUS: Nadabo Global Data
 
-Last updated: 2026-10-03 · Stage: **Phase 3 Step 2 complete: Settings Store** (Step 1 admin dashboard foundation also complete). Awaiting approval for the next step
+Last updated: 2026-10-03 · Stage: **Phase 3 Step 2 complete and closed: Settings Store** (Step 1 admin dashboard foundation also complete). Phase 3 Step 3 not started; awaiting approval
 
 ## Current state
 - Phase 1 foundation installed and verified with `scripts/bootstrap.sh`: Laravel 12.69.3, PHP 8.3.6, Node 22 / npm 10, MariaDB 10.11.
 - Phase 2 adds customer authentication, user types, account status, a profile page, a user dashboard shell, and Sanctum token authentication for the future mobile app.
 - Pre-Phase-3 changes: staff (System Users) are fully separate from customers, with 5 roles on their own guard; configurable email verification (off); configurable API token expiry. - Phase 3 Step 1: admin layout (sidebar, top bar, mobile drawer, profile menu, logout), dashboard home with foundation cards, and permission-guarded placeholder pages for every planned module.
-- Phase 3 Step 2: database-backed Settings Store (typed, cached, optional encryption for future secrets) and a working `/admin/settings` screen. 152 Pest tests pass. `/up` and `/api/v1/health` return 200.
+- Phase 3 Step 2: database-backed Settings Store (typed, cached, optional encryption for future secrets) and a working `/admin/settings` screen. 152 Pest tests pass.
+- Phase 3 Step 2 closing check (2026-10-03): desktop (1440px) and mobile (390px) visual check of `/admin/settings`; invalid save shows a summary banner and per-field errors (required name, 3-letter currency, valid timezone) and keeps the typed input; valid save shows "Settings saved." and the values persist after a fresh reload; no JavaScript errors or horizontal scrolling. 152 tests, Pint, build and route/config/view/event cache checks pass. `/up` and `/api/v1/health` return 200.
 - Repository layout: Laravel backend in `backend/`, Flutter app in `mobile/`.
 
 ## Technology stack (approved)
