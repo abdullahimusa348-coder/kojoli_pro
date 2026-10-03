@@ -92,6 +92,9 @@
                                 · {{ $plan->amount_type->label() }}
                             </p>
                         </div>
+                        @can(\App\Support\Enums\SystemPermission::ProvidersView->value)
+                            <div class="md:w-28"><a href="{{ route('admin.services.plans.routes', $plan) }}" class="text-xs hover:underline">@include('admin.services.routes.badge', ['candidates' => $routeResolver->candidatesFor($plan)])</a></div>
+                        @endcan
                         @can(\App\Support\Enums\SystemPermission::PricingView->value)
                             <div class="md:w-24"><a href="{{ route('admin.services.plans.prices', $plan) }}" class="text-xs hover:underline">@include('admin.services.pricing.priced-badge', ['plan' => $plan])</a></div>
                         @endcan

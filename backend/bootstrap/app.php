@@ -41,5 +41,6 @@ return Application::configure(basePath: dirname(__DIR__))
             : route('dashboard'));
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        //
+        // Provider credential fields are write-only: never flash them back as old input.
+        $exceptions->dontFlash(['credentials']);
     })->create();

@@ -20,7 +20,7 @@
 
 ## Planned domain rules (not built yet)
 1. Every normal business setting is managed from the Admin Dashboard, not cPanel or `.env`. `.env` holds only infrastructure and secrets.
-2. Each product/plan has its own provider: one primary and an optional fallback.
+2. Each plan has its own ordered provider routes (Phase 7): a primary (priority 1) and any number of fallbacks by priority, unique per plan, each with the provider's own plan code and an optional provider cost. Providers are independent of the catalog and list the services they support. `RouteResolver` only lists routes in order with eligible/skipped reasons; trying them and failing over is built in Phase 10. Ratel and Bangansuba are examples of future providers, created by an administrator; none are seeded.
 3. Each plan has separate prices for API User, Affiliate, Subscriber and Vendor.
 4. Payment gateways sit behind one interface so several can run side by side (Monnify, Aspfiy). Nothing is integrated yet.
 5. NIN and BVN are separate customer-facing services. Data and Smile Data are separate services.
@@ -37,3 +37,4 @@
 - Configurable: email verification (`NADABO_REQUIRE_EMAIL_VERIFICATION`), API token lifetime (`SANCTUM_TOKEN_EXPIRATION`).
 - Audit logs for admin and money-moving actions (Phase 16).
 - Never log secrets, tokens, BVN/NIN or card data.
+- Provider credentials: encrypted at rest (Laravel encryption, `APP_KEY`; keep `APP_PREVIOUS_KEYS` when rotating the key), write-only in the admin, hidden from serialization, never flashed as old input, logged or shown (only a last-four hint for values of 8+ characters). Every set, replacement and clear is recorded without the value.

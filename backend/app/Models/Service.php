@@ -75,4 +75,10 @@ class Service extends Model
     {
         $query->orderBy('sort_order')->orderBy('name');
     }
+
+    /** @return HasMany<ProviderService, $this> providers that support this service */
+    public function providerServices(): HasMany
+    {
+        return $this->hasMany(ProviderService::class);
+    }
 }

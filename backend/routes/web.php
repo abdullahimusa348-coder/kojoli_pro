@@ -6,7 +6,12 @@ use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
 use App\Http\Controllers\Admin\ModulePlaceholderController;
 use App\Http\Controllers\Admin\PlanController;
 use App\Http\Controllers\Admin\PlanPriceController;
+use App\Http\Controllers\Admin\PlanRouteController;
 use App\Http\Controllers\Admin\ProductController;
+use App\Http\Controllers\Admin\ProviderBulkRouteController;
+use App\Http\Controllers\Admin\ProviderController;
+use App\Http\Controllers\Admin\ProviderCredentialController;
+use App\Http\Controllers\Admin\ProviderServiceController;
 use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\ServiceCategoryController;
 use App\Http\Controllers\Admin\ServiceController;
@@ -24,6 +29,7 @@ use App\Http\Controllers\User\SecurityController;
 use App\Support\Admin\AdminModule;
 use App\Support\Enums\SystemPermission;
 use App\Support\Enums\UserType;
+use App\Support\Providers\CredentialKey;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -190,6 +196,18 @@ Route::prefix('admin')->name('admin.')->group(function () {
                         ->middleware(SystemPermission::PricingUpdate->middleware())->name('.plans.prices.status');
                 });
 
+                // Plan provider routes: services.view + providers.view; changes need providers.update. No delete.
+                Route::middleware(SystemPermission::ProvidersView->middleware())->group(function () {
+                    Route::get('plans/{plan}/routes', [PlanRouteController::class, 'index'])->whereNumber('plan')->name('.plans.routes');
+                    Route::middleware(SystemPermission::ProvidersUpdate->middleware())->group(function () {
+                        Route::post('plans/{plan}/routes', [PlanRouteController::class, 'store'])->whereNumber('plan')->name('.plans.routes.store');
+                        Route::get('plans/{plan}/routes/{route}/edit', [PlanRouteController::class, 'edit'])->whereNumber(['plan', 'route'])->name('.plans.routes.edit');
+                        Route::put('plans/{plan}/routes/{route}', [PlanRouteController::class, 'update'])->whereNumber(['plan', 'route'])->name('.plans.routes.update');
+                        Route::patch('plans/{plan}/routes/{route}/status', [PlanRouteController::class, 'updateStatus'])->whereNumber(['plan', 'route'])->name('.plans.routes.status');
+                        Route::patch('plans/{plan}/routes/{route}/move', [PlanRouteController::class, 'move'])->whereNumber(['plan', 'route'])->name('.plans.routes.move');
+                    });
+                });
+
                 // Services tab
                 Route::get('/', [ServiceController::class, 'index']);
                 Route::get('create', [ServiceController::class, 'create'])->middleware(SystemPermission::ServicesCreate->middleware())->name('.create');
@@ -198,6 +216,31 @@ Route::prefix('admin')->name('admin.')->group(function () {
                 Route::get('{service}/edit', [ServiceController::class, 'edit'])->whereNumber('service')->middleware(SystemPermission::ServicesUpdate->middleware())->name('.edit');
                 Route::put('{service}', [ServiceController::class, 'update'])->whereNumber('service')->middleware(SystemPermission::ServicesUpdate->middleware())->name('.update');
                 Route::patch('{service}/status', [ServiceController::class, 'updateStatus'])->whereNumber('service')->middleware(SystemPermission::ServicesUpdate->middleware())->name('.status');
+            });
+
+        // Providers (system infrastructure, independent of the catalog): providers.*.
+        // Configuration only: no provider API calls, adapters or failover execution (Phase 10). No delete routes.
+        Route::middleware([SystemPermission::AdminAccess->middleware(), SystemPermission::ProvidersView->middleware()])
+            ->prefix('providers')->name('providers')->group(function () {
+                Route::get('/', [ProviderController::class, 'index']);
+                Route::get('create', [ProviderController::class, 'create'])->middleware(SystemPermission::ProvidersCreate->middleware())->name('.create');
+                Route::post('/', [ProviderController::class, 'store'])->middleware(SystemPermission::ProvidersCreate->middleware())->name('.store');
+                Route::get('{provider}', [ProviderController::class, 'show'])->whereNumber('provider')->name('.show');
+                Route::middleware(SystemPermission::ProvidersUpdate->middleware())->group(function () {
+                    Route::get('{provider}/edit', [ProviderController::class, 'edit'])->whereNumber('provider')->name('.edit');
+                    Route::put('{provider}', [ProviderController::class, 'update'])->whereNumber('provider')->name('.update');
+                    Route::patch('{provider}/status', [ProviderController::class, 'updateStatus'])->whereNumber('provider')->name('.status');
+                    Route::post('{provider}/services', [ProviderServiceController::class, 'store'])->whereNumber('provider')->name('.services.store');
+                    Route::put('{provider}/services/{capability}', [ProviderServiceController::class, 'update'])->whereNumber(['provider', 'capability'])->name('.services.update');
+                    Route::patch('{provider}/services/{capability}/status', [ProviderServiceController::class, 'updateStatus'])->whereNumber(['provider', 'capability'])->name('.services.status');
+                    Route::post('{provider}/bulk-routes', [ProviderBulkRouteController::class, 'store'])->whereNumber('provider')
+                        ->middleware(SystemPermission::ServicesView->middleware())->name('.bulk-routes');
+                });
+                Route::middleware(SystemPermission::ProvidersCredentials->middleware())->group(function () {
+                    Route::put('{provider}/credentials', [ProviderCredentialController::class, 'update'])->whereNumber('provider')->name('.credentials.update');
+                    Route::patch('{provider}/credentials/{key}/clear', [ProviderCredentialController::class, 'clear'])->whereNumber('provider')
+                        ->whereIn('key', CredentialKey::values())->name('.credentials.clear');
+                });
             });
 
         // Modules not built yet: navigation placeholders only, no business logic.

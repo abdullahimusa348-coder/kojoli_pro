@@ -15,8 +15,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * A specific option within a product (e.g. "MTN SME 1GB – 30 days").
- * Customer-type selling prices live in plan_prices (Phase 6); provider routes
- * come later in their own tables. Variable-amount plans carry face-value
+ * Customer-type selling prices live in plan_prices (Phase 6); ordered provider
+ * routes (provider plan code and cost) live in plan_provider_routes (Phase 7). Variable-amount plans carry face-value
  * limits (min/max kobo the customer may enter); these are not prices.
  * Available only when the plan, product, service and category are all active.
  */
@@ -59,6 +59,12 @@ class Plan extends Model
     public function activePrices(): HasMany
     {
         return $this->prices()->where('is_active', true);
+    }
+
+    /** @return HasMany<PlanProviderRoute, $this> provider routes, primary first */
+    public function providerRoutes(): HasMany
+    {
+        return $this->hasMany(PlanProviderRoute::class)->orderBy('priority');
     }
 
     /** @return HasMany<PlanPriceChange, $this> */

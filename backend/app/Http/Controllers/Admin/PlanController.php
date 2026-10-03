@@ -9,6 +9,7 @@ use App\Http\Requests\Admin\Catalog\PlanRequest;
 use App\Models\Plan;
 use App\Models\Product;
 use App\Models\Service;
+use App\Services\Providers\RouteResolver;
 use App\Support\Catalog\AmountType;
 use App\Support\Catalog\Network;
 use App\Support\Catalog\ValidityPeriod;
@@ -35,12 +36,15 @@ class PlanController extends Controller
             'status' => ['nullable', 'in:active,disabled,available'],
             'pricing' => ['nullable', 'in:missing,complete'],
         ]);
-        // Price information is only shown to (and filterable by) staff with pricing.view.
+        // Price information is only shown to (and filterable by) staff with pricing.view;
+        // route eligibility only to staff with providers.view.
         $pricing = $request->user('admin')->can(SystemPermission::PricingView->value);
+        $routing = $request->user('admin')->can(SystemPermission::ProvidersView->value);
 
         $plans = Plan::query()
             ->with('product.service.category')
             ->when($pricing, fn ($query) => $query->withCount('activePrices'))
+            ->when($routing, fn ($query) => $query->with('providerRoutes.provider.services', 'providerRoutes.provider.credentials'))
             ->when($pricing && ($filters['pricing'] ?? null) === 'missing', fn ($query) => $query->has('activePrices', '<', Plan::customerTypeCount()))
             ->when($pricing && ($filters['pricing'] ?? null) === 'complete', fn ($query) => $query->has('activePrices', '>=', Plan::customerTypeCount()))
             ->when($filters['q'] ?? null, function ($query, string $term) {
@@ -65,6 +69,7 @@ class PlanController extends Controller
             'products' => Product::with('service')->orderBy('service_id')->ordered()->get(),
             'networks' => Network::cases(),
             'validities' => ValidityPeriod::cases(),
+            'routeResolver' => app(RouteResolver::class),
         ]);
     }
 

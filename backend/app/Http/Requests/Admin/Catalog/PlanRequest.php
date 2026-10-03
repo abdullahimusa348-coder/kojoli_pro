@@ -20,7 +20,7 @@ use Illuminate\Validation\Rule;
  * must be unique; on update the code is locked. Variable-amount plans have
  * no fixed data volume. Face-value limits (min/max amount, typed in naira,
  * stored in kobo) are for variable plans only. The amount type cannot change
- * once the plan has prices.
+ * once the plan has prices or a provider route with a cost.
  */
 class PlanRequest extends FormRequest
 {
@@ -53,6 +53,8 @@ class PlanRequest extends FormRequest
                 $plan = $this->route('plan');
                 if ($plan instanceof Plan && $plan->amount_type->value !== $value && $plan->prices()->exists()) {
                     $fail('The amount type cannot be changed because this plan already has prices.');
+                } elseif ($plan instanceof Plan && $plan->amount_type->value !== $value && $plan->providerRoutes()->whereNotNull('cost_type')->exists()) {
+                    $fail('The amount type cannot be changed because a provider route of this plan has a cost.');
                 }
             }],
             'validity_period' => ['nullable', Rule::enum(ValidityPeriod::class)],

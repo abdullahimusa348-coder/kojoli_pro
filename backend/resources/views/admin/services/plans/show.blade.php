@@ -44,6 +44,18 @@
         @endif
     </section>
 
+    @can(\App\Support\Enums\SystemPermission::ProvidersView->value)
+        <section class="mt-6 max-w-3xl rounded-2xl bg-white p-5 shadow-sm ring-1 ring-navy-100 sm:p-6" data-plan-routes>
+            <div class="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                    <h2 class="text-base font-semibold text-navy-900">Provider routes</h2>
+                    <p class="mt-0.5 text-sm text-navy-600">@include('admin.services.routes.badge', ['candidates' => app(\App\Services\Providers\RouteResolver::class)->candidatesFor($plan)])</p>
+                </div>
+                <a href="{{ route('admin.services.plans.routes', $plan) }}" class="rounded-lg px-3 py-1.5 text-sm font-medium text-brand-700 ring-1 ring-navy-200 hover:bg-navy-50">Manage routes</a>
+            </div>
+        </section>
+    @endcan
+
     @can(\App\Support\Enums\SystemPermission::PricingView->value)
         <section class="mt-6 max-w-3xl rounded-2xl bg-white p-5 shadow-sm ring-1 ring-navy-100 sm:p-6" data-plan-pricing>
             <div class="flex flex-wrap items-center justify-between gap-3">

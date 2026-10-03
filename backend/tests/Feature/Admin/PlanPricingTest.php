@@ -750,11 +750,12 @@ describe('scope', function () {
         expect(PlanPrice::count())->toBe(0)->and(PlanPriceChange::count())->toBe(0)->and(Plan::count())->toBe(0);
     });
 
-    it('adds no provider, wallet, purchase or customer-facing pricing code', function () {
-        foreach (['providers', 'provider_routes', 'wallets', 'transactions', 'orders', 'payments', 'commissions', 'cashbacks'] as $table) {
+    it('adds no wallet, purchase or customer-facing pricing code', function () {
+        // Providers exist since Phase 7 (configuration only, in their own tables); provider cost never lives in pricing.
+        foreach (['provider_routes', 'wallets', 'transactions', 'orders', 'payments', 'commissions', 'cashbacks'] as $table) {
             expect(Schema::hasTable($table))->toBeFalse("{$table} exists");
         }
-        foreach (['App\\Models\\Provider', 'App\\Models\\Wallet', 'App\\Models\\Transaction', 'App\\Models\\Order', 'App\\Services\\Pricing\\ProviderCost'] as $class) {
+        foreach (['App\\Models\\Wallet', 'App\\Models\\Transaction', 'App\\Models\\Order', 'App\\Services\\Pricing\\ProviderCost'] as $class) {
             expect(class_exists($class))->toBeFalse("{$class} exists");
         }
 
