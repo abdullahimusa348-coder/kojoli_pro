@@ -47,6 +47,14 @@ it('welcomes the customer by name and shows the account summary', function () {
         ->assertSeeInOrder(['data-summary="email-verification"', 'ada@example.com'], false);
 });
 
+it('wraps a very long single-word name in the welcome heading', function () {
+    $name = 'Chukwuemekaolisaebukaadaezenwakaego Okonkwo';
+
+    $this->actingAs(dashCustomer(['name' => $name]))->get('/dashboard')->assertOk()
+        ->assertSee('<h1 id="welcome-heading" class="mt-1 break-words', false)
+        ->assertSeeInOrder(['id="welcome-heading"', $name], false);
+});
+
 it('shows the correct account type label', function (UserType $type) {
     $this->actingAs(dashCustomer(['user_type' => $type]))->get('/dashboard')
         ->assertSeeInOrder(['data-summary="type"', $type->label()], false);

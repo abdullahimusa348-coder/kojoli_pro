@@ -6,7 +6,7 @@
     {{-- Welcome --}}
     <section aria-labelledby="welcome-heading">
         <p class="text-sm font-medium text-brand-700">Welcome back</p>
-        <h1 id="welcome-heading" class="mt-1 text-2xl font-semibold text-navy-900 sm:text-3xl">{{ $user->name }}</h1>
+        <h1 id="welcome-heading" class="mt-1 break-words text-2xl font-semibold text-navy-900 sm:text-3xl">{{ $user->name }}</h1>
         <p class="mt-1 text-sm text-navy-600">Here is a summary of your Nadabo Global Data account.</p>
     </section>
 
