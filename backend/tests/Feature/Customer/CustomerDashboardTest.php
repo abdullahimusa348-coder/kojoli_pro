@@ -119,7 +119,7 @@ describe('shortcuts', function () {
         $this->actingAs($user);
 
         $this->get(parse_url(CustomerNav::Account->url(), PHP_URL_PATH))->assertOk()->assertSee('Account details');
-        $this->get(parse_url(CustomerNav::Security->url(), PHP_URL_PATH))->assertOk()->assertSee('id="security"', false)->assertSee('Change password');
+        $this->get(parse_url(CustomerNav::Security->url(), PHP_URL_PATH))->assertOk()->assertSee('data-security-section="password"', false)->assertSee('Change password');
     });
 
     it('offers no other shortcuts', function () {

@@ -40,8 +40,7 @@ enum CustomerNav: string
         return match ($this) {
             self::Dashboard => route('dashboard'),
             self::Account => route('profile.edit'),
-            // Password change currently lives on the Account page; Phase 4 Step 4 adds a Security page.
-            self::Security => route('profile.edit').'#security',
+            self::Security => route('security'),
             self::EmailVerification => route('verification.notice'),
         };
     }
@@ -51,7 +50,7 @@ enum CustomerNav: string
         return match ($this) {
             self::Dashboard => request()->routeIs('dashboard'),
             self::Account => request()->routeIs('profile.*'),
-            self::Security => false,
+            self::Security => request()->routeIs('security'),
             self::EmailVerification => request()->routeIs('verification.*'),
         };
     }

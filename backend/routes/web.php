@@ -15,6 +15,7 @@ use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\User\DashboardController;
 use App\Http\Controllers\User\PasswordController;
 use App\Http\Controllers\User\ProfileController;
+use App\Http\Controllers\User\SecurityController;
 use App\Support\Admin\AdminModule;
 use App\Support\Enums\SystemPermission;
 use Illuminate\Support\Facades\Route;
@@ -59,6 +60,21 @@ Route::middleware(['auth:web', 'auth.session'])->group(function () {
     Route::get('profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::put('profile/password', [PasswordController::class, 'update'])->name('profile.password.update');
+
+    // Security: own browser sessions and app tokens. Reachable while unverified, like the Account page.
+    Route::get('security', [SecurityController::class, 'show'])->name('security');
+    Route::middleware('throttle:10,1')->group(function () {
+        Route::delete('security/sessions/{session}', [SecurityController::class, 'destroySession'])
+            ->where('session', '[a-f0-9]{64}')
+            ->name('security.sessions.destroy');
+        Route::post('security/sessions/logout-others', [SecurityController::class, 'logoutOtherSessions'])
+            ->name('security.sessions.logout-others');
+        Route::delete('security/tokens/{token}', [SecurityController::class, 'destroyToken'])
+            ->whereNumber('token')
+            ->name('security.tokens.destroy');
+        Route::delete('security/tokens', [SecurityController::class, 'destroyAllTokens'])
+            ->name('security.tokens.destroy-all');
+    });
 });
 
 // Admin area: staff only (system_users, `admin` guard, separate session cookie).

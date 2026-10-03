@@ -74,12 +74,12 @@ describe('layout', function () {
         $account = $this->actingAs($user)->get('/profile')->assertOk()->getContent();
         expect($account)->toMatch('/data-customer-nav="account"[^>]*aria-current="page"/')
             ->and($account)->toMatch('/data-customer-bottom-nav="account"[^>]*aria-current="page"/')
-            ->and($account)->toContain('id="security"');
+            ->and($account)->toContain('data-security-link');
     });
 
-    it('links Security to the password section of the Account page', function () {
+    it('links Security to the Security page', function () {
         $this->actingAs(navCustomer())->get('/dashboard')
-            ->assertSee('href="'.route('profile.edit').'#security"', false);
+            ->assertSee('href="'.route('security').'"', false);
     });
 
     it('shows Email verification in the menu only when enabled', function () {

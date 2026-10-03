@@ -88,20 +88,12 @@
         </section>
     </div>
 
-    {{-- Password (kept here for the Security link until the Security page is built) --}}
-    <section id="security" class="mt-6 scroll-mt-24 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-navy-100 sm:p-6 lg:max-w-2xl" aria-labelledby="password-heading">
-        <h2 id="password-heading" class="text-lg font-semibold text-navy-900">Change password</h2>
-        @if (session('status') === 'password-updated')
-            <x-alert class="mt-4">Password updated. Other devices have been signed out.</x-alert>
-        @endif
-
-        <form method="POST" action="{{ route('profile.password.update') }}" class="mt-4" novalidate>
-            @csrf
-            @method('PUT')
-            <x-input name="current_password" label="Current password" type="password" bag="updatePassword" autocomplete="current-password" required />
-            <x-input name="password" label="New password" type="password" bag="updatePassword" autocomplete="new-password" required />
-            <x-input name="password_confirmation" label="Confirm new password" type="password" bag="updatePassword" autocomplete="new-password" required />
-            <x-button class="sm:w-auto">Update password</x-button>
-        </form>
+    {{-- Password and sign-in security live on the Security page --}}
+    <section class="mt-6 flex flex-col gap-3 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-navy-100 sm:flex-row sm:items-center sm:justify-between sm:p-6" aria-labelledby="security-link-heading" data-security-link>
+        <div>
+            <h2 id="security-link-heading" class="text-lg font-semibold text-navy-900">Password &amp; security</h2>
+            <p class="mt-1 text-sm text-navy-600">Change your password and manage signed-in browsers and apps on the Security page.</p>
+        </div>
+        <a href="{{ route('security') }}" class="inline-flex shrink-0 items-center justify-center rounded-lg bg-navy-900 px-4 py-2 text-sm font-semibold text-white hover:bg-navy-800">Go to Security</a>
     </section>
 @endsection

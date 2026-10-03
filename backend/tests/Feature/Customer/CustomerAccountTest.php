@@ -46,7 +46,7 @@ describe('account page', function () {
         $this->actingAs(accountCustomer(['user_type' => $type]))->get('/profile')->assertOk()
             ->assertSeeInOrder(['data-account="type"', $type->label()], false)
             ->assertSee('data-phone-readonly', false)
-            ->assertSee('id="security"', false);
+            ->assertSee('data-security-link', false);
     })->with(UserType::cases());
 
     it('is reached from the Account navigation item', function () {
@@ -187,16 +187,13 @@ describe('locked fields', function () {
 });
 
 describe('password section', function () {
-    it('keeps the password form under the Security anchor, separate from account details', function () {
+    it('links to the Security page instead of showing the password form (Phase 4 Step 4)', function () {
         $html = $this->actingAs(accountCustomer())->get('/profile')->getContent();
 
-        expect($html)->toMatch('/<section id="security"[^>]*>.*name="current_password"/s')
-            ->and($html)->toContain('href="'.CustomerNav::Security->url().'"');
-
-        // The password fields are not inside the account details or edit-details form.
-        $editForm = substr($html, strpos($html, 'action="'.route('profile.update').'"'));
-        $editForm = substr($editForm, 0, strpos($editForm, '</form>'));
-        expect($editForm)->not->toContain('current_password');
+        expect($html)->toContain('data-security-link')
+            ->and($html)->toContain('href="'.CustomerNav::Security->url().'"')
+            ->and($html)->not->toContain('name="current_password"')
+            ->and($html)->not->toContain('action="'.route('profile.password.update').'"');
     });
 
     it('still changes the password', function () {
@@ -204,7 +201,7 @@ describe('password section', function () {
 
         $this->actingAs($user)->put('/profile/password', [
             'current_password' => 'password', 'password' => 'NewSecret123', 'password_confirmation' => 'NewSecret123',
-        ])->assertSessionHasNoErrors()->assertRedirect(route('profile.edit'));
+        ])->assertSessionHasNoErrors()->assertRedirect(route('security'));
 
         expect(Hash::check('NewSecret123', $user->fresh()->password))->toBeTrue();
     });

@@ -75,7 +75,7 @@ it('changes the password only with the current password', function () {
         'current_password' => 'password',
         'password' => 'NewSecret123',
         'password_confirmation' => 'NewSecret123',
-    ])->assertSessionHasNoErrors()->assertRedirect(route('profile.edit'));
+    ])->assertSessionHasNoErrors()->assertRedirect(route('security'));
 
     expect(Hash::check('NewSecret123', $user->fresh()->password))->toBeTrue();
 });

@@ -19,6 +19,6 @@ class PasswordController extends Controller
         $request->user()->tokens()->delete();
         $request->session()->regenerate();
 
-        return redirect()->route('profile.edit')->with('status', 'password-updated');
+        return redirect()->route('security')->with('status', 'password-updated');
     }
 }
