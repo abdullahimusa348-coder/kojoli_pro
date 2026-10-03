@@ -1,6 +1,6 @@
 # PROJECT STATUS: Nadabo Global Data
 
-Last updated: 2026-10-03 · Stage: **Phase 3 Step 5 complete: Customer Users Management** (Steps 1–4 also complete). No later Phase 3 step started; awaiting approval
+Last updated: 2026-10-03 · Stage: **Phase 3 Step 5 complete and closed: Customer Users Management** (Steps 1–4 also complete). No later Phase 3 step started; awaiting approval
 
 ## Current state
 - Phase 1 foundation installed and verified with `scripts/bootstrap.sh`: Laravel 12.69.3, PHP 8.3.6, Node 22 / npm 10, MariaDB 10.11.
@@ -11,7 +11,8 @@ Last updated: 2026-10-03 · Stage: **Phase 3 Step 5 complete: Customer Users Man
 - Phase 3 Step 3: System Users (staff accounts) management at `/admin/system-users`: list with search and role/status filters, create, edit (optional password change), activate/deactivate, soft delete, one role per staff member, safety rules. 198 Pest tests pass.
 - Phase 3 Step 3 closing check (2026-10-03): clean working tree, 198 tests passing, Pint, build and route/config/view/event cache checks pass; Step 3 diff reviewed (no unrelated changes, secrets, customer-view or mobile changes); temporary verification accounts and sessions removed from the local database.
 - Phase 3 Step 4: Roles & Permissions management at `/admin/roles` (list with search/type filter, create, edit, delete custom roles) with a permission matrix grouped by 16 modules; 36-permission catalog; custom roles assignable to staff. 241 Pest tests pass.
-- Phase 3 Step 5: Customer Users management at `/admin/users`: list with search (name, email, phone in any format, ID) and type/status filters, pagination, safe customer details, enable/disable (revokes API tokens), type change via `ChangeUserType`, profile edit, password-reset email. No deletion. 288 Pest tests pass. `/up` and `/api/v1/health` return 200.
+- Phase 3 Step 5: Customer Users management at `/admin/users`: list with search (name, email, phone in any format, ID) and type/status filters, pagination, safe customer details, enable/disable (revokes API tokens), type change via `ChangeUserType`, profile edit, password-reset email. No deletion. 288 Pest tests pass.
+- Phase 3 Step 5 closing check (2026-10-03): clean working tree in sync with GitHub, 288 tests passing, Pint, build and route/config/view/event cache checks pass, all 11 migrations ran; Step 5 diff reviewed (no unrelated changes, secrets, customer-view or mobile changes); no verification customers, staff, tokens, reset tokens, sessions or custom roles left in the local database. `/up` and `/api/v1/health` return 200.
 - Repository layout: Laravel backend in `backend/`, Flutter app in `mobile/`.
 
 ## Technology stack (approved)
