@@ -67,4 +67,21 @@ class DefaultCatalog
             ],
         ];
     }
+
+    /**
+     * Minimal generic products seeded by ProductCatalogSeeder, keyed by service
+     * slug. All seeded disabled; no plans are seeded.
+     *
+     * @return array<string, list<array{name: string, network: ?Network}>>
+     */
+    public static function products(): array
+    {
+        $networks = fn () => array_map(fn (Network $n) => ['name' => $n->label(), 'network' => $n], Network::cases());
+
+        return [
+            'data' => $networks(),
+            'airtime' => $networks(),
+            'smile-data' => [['name' => 'Smile', 'network' => null]],
+        ];
+    }
 }

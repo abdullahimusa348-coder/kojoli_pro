@@ -36,4 +36,30 @@
             <p class="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">This service is active, but its category is disabled, so it is unavailable.</p>
         @endif
     </section>
+
+    {{-- Products in this service --}}
+    <section class="mt-6 max-w-3xl overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-navy-100" aria-labelledby="service-products-heading" data-service-products>
+        <div class="flex flex-wrap items-center justify-between gap-2 border-b border-navy-100 px-5 py-4">
+            <h2 id="service-products-heading" class="text-base font-semibold text-navy-900">Products in this service</h2>
+            <div class="flex gap-3 text-sm">
+                @can(\App\Support\Enums\SystemPermission::ServicesCreate->value)
+                    <a href="{{ route('admin.services.products.create', ['service' => $service->id]) }}" class="text-brand-700 hover:underline">Add product</a>
+                @endcan
+                <a href="{{ route('admin.services.products', ['service' => $service->id]) }}" class="text-brand-700 hover:underline">View in Products</a>
+            </div>
+        </div>
+        @if ($products->isEmpty())
+            <p class="px-5 py-8 text-center text-sm text-navy-600">No products in this service yet.</p>
+        @else
+            <ul class="divide-y divide-navy-100" role="list">
+                @foreach ($products as $product)
+                    @php($product->setRelation('service', $service))
+                    <li class="flex flex-wrap items-center justify-between gap-2 px-5 py-3" data-service-product="{{ $product->code }}">
+                        <a href="{{ route('admin.services.products.show', $product) }}" class="min-w-0 break-words text-sm font-medium text-navy-900 hover:text-brand-700">{{ $product->name }}</a>
+                        @include('admin.services.partials.status', ['label' => $product->statusLabel()])
+                    </li>
+                @endforeach
+            </ul>
+        @endif
+    </section>
 @endsection

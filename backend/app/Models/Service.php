@@ -8,10 +8,11 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
- * A catalog service (e.g. Data, NIN). Catalog entry only: plans, pricing,
- * providers and purchasing come in later phases. A service is available
+ * A catalog service (e.g. Data, NIN), with products and plans under it.
+ * Pricing, providers and purchasing come in later phases. A service is available
  * only when it and its category are both active.
  */
 class Service extends Model
@@ -36,6 +37,12 @@ class Service extends Model
     public function category(): BelongsTo
     {
         return $this->belongsTo(ServiceCategory::class, 'category_id');
+    }
+
+    /** @return HasMany<Product, $this> */
+    public function products(): HasMany
+    {
+        return $this->hasMany(Product::class);
     }
 
     public function isAvailable(): bool

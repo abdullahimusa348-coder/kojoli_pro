@@ -509,12 +509,15 @@ describe('starting catalog', function () {
 });
 
 describe('scope', function () {
-    it('adds no purchasing, pricing, plans, providers or customer-facing catalog pages', function () {
-        expect(Schema::hasTable('plans'))->toBeFalse()->and(Schema::hasTable('products'))->toBeFalse()
-            ->and(Schema::hasTable('providers'))->toBeFalse()->and(Schema::hasTable('orders'))->toBeFalse()
-            ->and(Schema::hasTable('transactions'))->toBeFalse()->and(Schema::hasTable('wallets'))->toBeFalse()
-            ->and(Schema::hasColumns('services', ['price']))->toBeFalse()
-            ->and(Schema::hasColumns('services', ['provider_id']))->toBeFalse();
+    it('adds no purchasing, pricing, providers or customer-facing catalog pages', function () {
+        expect(Schema::hasTable('providers'))->toBeFalse()->and(Schema::hasTable('orders'))->toBeFalse()
+            ->and(Schema::hasTable('transactions'))->toBeFalse()->and(Schema::hasTable('wallets'))->toBeFalse();
+
+        foreach (['services', 'products', 'plans'] as $table) {
+            foreach (['price', 'cost', 'amount', 'face_value', 'provider_id'] as $column) {
+                expect(Schema::hasColumn($table, $column))->toBeFalse("{$table}.{$column} exists");
+            }
+        }
 
         $customerCatalogRoutes = collect(Route::getRoutes())->filter(fn ($r) => ! str_starts_with($r->uri(), 'admin')
             && preg_match('/(service|categor|plan|purchase|buy|order|wallet)/i', $r->uri()));

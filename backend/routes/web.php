@@ -4,6 +4,8 @@ use App\Http\Controllers\Admin\Auth\AdminSessionController;
 use App\Http\Controllers\Admin\CustomerController;
 use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
 use App\Http\Controllers\Admin\ModulePlaceholderController;
+use App\Http\Controllers\Admin\PlanController;
+use App\Http\Controllers\Admin\ProductController;
 use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\ServiceCategoryController;
 use App\Http\Controllers\Admin\ServiceController;
@@ -146,7 +148,8 @@ Route::prefix('admin')->name('admin.')->group(function () {
                     ->name('.password-reset');
             });
 
-        // Services & Categories (catalog only; services.* covers both). No delete routes.
+        // Service catalog: categories, services, products and plans (structure only;
+        // services.* covers all four). No delete routes.
         Route::middleware([SystemPermission::AdminAccess->middleware(), SystemPermission::ServicesView->middleware()])
             ->prefix('services')->name('services')->group(function () {
                 // Categories tab (registered before {service} routes)
@@ -157,6 +160,24 @@ Route::prefix('admin')->name('admin.')->group(function () {
                 Route::get('categories/{category}/edit', [ServiceCategoryController::class, 'edit'])->whereNumber('category')->middleware(SystemPermission::ServicesUpdate->middleware())->name('.categories.edit');
                 Route::put('categories/{category}', [ServiceCategoryController::class, 'update'])->whereNumber('category')->middleware(SystemPermission::ServicesUpdate->middleware())->name('.categories.update');
                 Route::patch('categories/{category}/status', [ServiceCategoryController::class, 'updateStatus'])->whereNumber('category')->middleware(SystemPermission::ServicesUpdate->middleware())->name('.categories.status');
+
+                // Products tab
+                Route::get('products', [ProductController::class, 'index'])->name('.products');
+                Route::get('products/create', [ProductController::class, 'create'])->middleware(SystemPermission::ServicesCreate->middleware())->name('.products.create');
+                Route::post('products', [ProductController::class, 'store'])->middleware(SystemPermission::ServicesCreate->middleware())->name('.products.store');
+                Route::get('products/{product}', [ProductController::class, 'show'])->whereNumber('product')->name('.products.show');
+                Route::get('products/{product}/edit', [ProductController::class, 'edit'])->whereNumber('product')->middleware(SystemPermission::ServicesUpdate->middleware())->name('.products.edit');
+                Route::put('products/{product}', [ProductController::class, 'update'])->whereNumber('product')->middleware(SystemPermission::ServicesUpdate->middleware())->name('.products.update');
+                Route::patch('products/{product}/status', [ProductController::class, 'updateStatus'])->whereNumber('product')->middleware(SystemPermission::ServicesUpdate->middleware())->name('.products.status');
+
+                // Plans tab
+                Route::get('plans', [PlanController::class, 'index'])->name('.plans');
+                Route::get('plans/create', [PlanController::class, 'create'])->middleware(SystemPermission::ServicesCreate->middleware())->name('.plans.create');
+                Route::post('plans', [PlanController::class, 'store'])->middleware(SystemPermission::ServicesCreate->middleware())->name('.plans.store');
+                Route::get('plans/{plan}', [PlanController::class, 'show'])->whereNumber('plan')->name('.plans.show');
+                Route::get('plans/{plan}/edit', [PlanController::class, 'edit'])->whereNumber('plan')->middleware(SystemPermission::ServicesUpdate->middleware())->name('.plans.edit');
+                Route::put('plans/{plan}', [PlanController::class, 'update'])->whereNumber('plan')->middleware(SystemPermission::ServicesUpdate->middleware())->name('.plans.update');
+                Route::patch('plans/{plan}/status', [PlanController::class, 'updateStatus'])->whereNumber('plan')->middleware(SystemPermission::ServicesUpdate->middleware())->name('.plans.status');
 
                 // Services tab
                 Route::get('/', [ServiceController::class, 'index']);

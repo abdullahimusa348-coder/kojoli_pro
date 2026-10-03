@@ -65,7 +65,10 @@ class ServiceController extends Controller
 
     public function show(Service $service): View
     {
-        return view('admin.services.show', ['service' => $service->load('category')]);
+        return view('admin.services.show', [
+            'service' => $service->load('category'),
+            'products' => $service->products()->ordered()->get(),
+        ]);
     }
 
     public function edit(Service $service): View
