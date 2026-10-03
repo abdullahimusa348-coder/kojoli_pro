@@ -893,8 +893,8 @@ describe('scope', function () {
             && in_array('DELETE', $r->methods(), true));
 
         expect($public->map->uri()->values()->all())->toBe([])->and($deletes)->toBeEmpty();
-        // payments exists since Phase 9 (wallet funding through gateways); purchases still do not.
-        foreach (['orders', 'commissions', 'purchases', 'provider_attempts'] as $table) {
+        // payments exists since Phase 9 and purchases (with purchase_attempts) since Phase 10.
+        foreach (['orders', 'commissions', 'provider_attempts'] as $table) {
             expect(Schema::hasTable($table))->toBeFalse("{$table} exists");
         }
     });

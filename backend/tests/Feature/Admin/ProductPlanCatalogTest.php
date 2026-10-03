@@ -73,7 +73,7 @@ describe('schema', function () {
 
         // Customer selling prices live in their own plan_prices table (Phase 6), never on products or plans.
         // Provider routes live in their own plan_provider_routes table (Phase 7), never on products or plans.
-        expect(Schema::hasTable('orders'))->toBeFalse()->and(Schema::hasTable('purchases'))->toBeFalse();
+        expect(Schema::hasTable('orders'))->toBeFalse(); // purchases exists since Phase 10, in its own tables
         foreach (['wallets', 'transactions'] as $table) {
             expect(Schema::hasColumn($table, 'plan_id'))->toBeFalse("{$table}.plan_id exists");
         }

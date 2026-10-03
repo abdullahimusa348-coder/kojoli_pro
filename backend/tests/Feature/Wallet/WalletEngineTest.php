@@ -59,7 +59,8 @@ describe('schema', function () {
             }
         }
         // payments exists since Phase 9 and never holds balances (it links to one funding transaction).
-        foreach (['purchases', 'provider_attempts', 'withdrawals', 'deposits', 'wallet_holds'] as $table) {
+        // purchases exists since Phase 10: it links to wallet transactions and never holds a balance.
+        foreach (['provider_attempts', 'withdrawals', 'deposits', 'wallet_holds'] as $table) {
             expect(Schema::hasTable($table))->toBeFalse("{$table} exists");
         }
     });

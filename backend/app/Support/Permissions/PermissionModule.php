@@ -19,6 +19,7 @@ enum PermissionModule: string
     case Pricing = 'pricing';
     case Providers = 'providers';
     case Payments = 'payments';
+    case Purchases = 'purchases';
     case Transactions = 'transactions';
     case Withdrawals = 'withdrawals';
     case Referrals = 'referrals';
@@ -40,6 +41,7 @@ enum PermissionModule: string
             self::Pricing => 'Pricing',
             self::Providers => 'Providers',
             self::Payments => 'Payments',
+            self::Purchases => 'Purchases',
             self::Transactions => 'Transactions',
             self::Withdrawals => 'Withdrawals',
             self::Referrals => 'Referral & Commission',

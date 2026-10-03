@@ -67,6 +67,10 @@ enum SystemPermission: string
     case PaymentsGateways = 'payments.gateways';
     case PaymentsCredentials = 'payments.credentials';
 
+    // Purchases
+    case PurchasesView = 'purchases.view';
+    case PurchasesManage = 'purchases.manage';
+
     // Transactions
     case TransactionsView = 'transactions.view';
     case TransactionsManage = 'transactions.manage';
@@ -108,6 +112,7 @@ enum SystemPermission: string
             self::PricingView, self::PricingUpdate => PermissionModule::Pricing,
             self::ProvidersView, self::ProvidersCreate, self::ProvidersUpdate, self::ProvidersDelete, self::ProvidersCredentials => PermissionModule::Providers,
             self::PaymentsView, self::PaymentsManage, self::PaymentsGateways, self::PaymentsCredentials => PermissionModule::Payments,
+            self::PurchasesView, self::PurchasesManage => PermissionModule::Purchases,
             self::TransactionsView, self::TransactionsManage => PermissionModule::Transactions,
             self::WithdrawalsView, self::WithdrawalsManage => PermissionModule::Withdrawals,
             self::ReferralsView, self::ReferralsManage => PermissionModule::Referrals,
@@ -134,6 +139,7 @@ enum SystemPermission: string
             self::PaymentsManage => 'Recheck / resolve review',
             self::PaymentsGateways => 'Manage gateways',
             self::PaymentsCredentials => 'Manage gateway credentials',
+            self::PurchasesManage => 'Re-check with provider',
             self::WithdrawalsManage => 'Approve / manage',
             self::ReportsExport => 'Export',
             default => match (substr($this->value, strrpos($this->value, '.') + 1)) {

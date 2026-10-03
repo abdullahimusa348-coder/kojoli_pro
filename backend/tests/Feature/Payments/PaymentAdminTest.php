@@ -365,7 +365,8 @@ it('ships with no gateway driver registered and only the approved payment tables
     $config = require base_path('config/payments.php');
 
     expect($config['drivers'])->toBe([]);
-    foreach (['payment_attempts', 'purchases', 'provider_attempts', 'deposits', 'withdrawals', 'refunds', 'virtual_accounts', 'reserved_accounts', 'payment_points'] as $table) {
+    // purchases exists since Phase 10 (a separate engine; nothing in payments references it).
+    foreach (['payment_attempts', 'provider_attempts', 'deposits', 'withdrawals', 'refunds', 'virtual_accounts', 'reserved_accounts', 'payment_points'] as $table) {
         expect(Schema::hasTable($table))->toBeFalse("{$table} exists");
     }
     foreach (['payment_gateways', 'payment_gateway_credentials', 'payment_gateway_credential_changes', 'payments', 'payment_webhooks', 'payment_status_changes'] as $table) {

@@ -511,7 +511,7 @@ describe('starting catalog', function () {
 describe('scope', function () {
     it('adds no purchasing, pricing, providers or customer-facing catalog pages', function () {
         // Providers exist since Phase 7 (configuration only) and wallets/transactions since Phase 8; purchasing does not.
-        expect(Schema::hasTable('orders'))->toBeFalse()->and(Schema::hasTable('purchases'))->toBeFalse();
+        expect(Schema::hasTable('orders'))->toBeFalse(); // purchases exists since Phase 10, in its own tables
 
         foreach (['services', 'products', 'plans'] as $table) {
             foreach (['price', 'cost', 'amount', 'face_value', 'provider_id'] as $column) {
