@@ -10,6 +10,8 @@ enum SystemPermission: string
     case CustomersUpdateStatus = 'customers.update-status';
     case CustomersChangeType = 'customers.change-type';
     case SystemUsersManage = 'system-users.manage';
+    case SettingsView = 'settings.view';
+    case SettingsUpdate = 'settings.update';
 
     /** @return list<string> */
     public static function values(): array

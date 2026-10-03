@@ -3,6 +3,7 @@
 use App\Http\Controllers\Admin\Auth\AdminSessionController;
 use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
 use App\Http\Controllers\Admin\ModulePlaceholderController;
+use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\EmailVerificationController;
 use App\Http\Controllers\Auth\NewPasswordController;
@@ -12,6 +13,7 @@ use App\Http\Controllers\User\DashboardController;
 use App\Http\Controllers\User\PasswordController;
 use App\Http\Controllers\User\ProfileController;
 use App\Support\Admin\AdminModule;
+use App\Support\Enums\SystemPermission;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -72,9 +74,22 @@ Route::prefix('admin')->name('admin.')->group(function () {
             ->middleware('permission:'.AdminModule::Dashboard->permission().',admin')
             ->name('dashboard');
 
+        // Settings store
+        Route::middleware('permission:'.SystemPermission::AdminAccess->value.',admin')->group(function () {
+            Route::get('settings', [SettingsController::class, 'index'])
+                ->middleware('permission:'.SystemPermission::SettingsView->value.',admin')
+                ->name('settings');
+            Route::put('settings', [SettingsController::class, 'update'])
+                ->middleware([
+                    'permission:'.SystemPermission::SettingsView->value.',admin',
+                    'permission:'.SystemPermission::SettingsUpdate->value.',admin',
+                ])
+                ->name('settings.update');
+        });
+
         // Modules not built yet: navigation placeholders only, no business logic.
         foreach (AdminModule::cases() as $module) {
-            if ($module === AdminModule::Dashboard) {
+            if ($module->isBuilt()) {
                 continue;
             }
 

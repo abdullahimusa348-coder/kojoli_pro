@@ -1,11 +1,12 @@
 # PROJECT STATUS: Nadabo Global Data
 
-Last updated: 2026-10-03 · Stage: **Phase 3 Step 1 complete: admin dashboard foundation** (layout, navigation, placeholders). Awaiting approval for the next step
+Last updated: 2026-10-03 · Stage: **Phase 3 Step 2 complete: Settings Store** (Step 1 admin dashboard foundation also complete). Awaiting approval for the next step
 
 ## Current state
 - Phase 1 foundation installed and verified with `scripts/bootstrap.sh`: Laravel 12.69.3, PHP 8.3.6, Node 22 / npm 10, MariaDB 10.11.
 - Phase 2 adds customer authentication, user types, account status, a profile page, a user dashboard shell, and Sanctum token authentication for the future mobile app.
-- Pre-Phase-3 changes: staff (System Users) are fully separate from customers, with 5 roles on their own guard; configurable email verification (off); configurable API token expiry. - Phase 3 Step 1: admin layout (sidebar, top bar, mobile drawer, profile menu, logout), dashboard home with foundation cards, and permission-guarded placeholder pages for every planned module. 112 Pest tests pass. `/up` and `/api/v1/health` return 200.
+- Pre-Phase-3 changes: staff (System Users) are fully separate from customers, with 5 roles on their own guard; configurable email verification (off); configurable API token expiry. - Phase 3 Step 1: admin layout (sidebar, top bar, mobile drawer, profile menu, logout), dashboard home with foundation cards, and permission-guarded placeholder pages for every planned module.
+- Phase 3 Step 2: database-backed Settings Store (typed, cached, optional encryption for future secrets) and a working `/admin/settings` screen. 152 Pest tests pass. `/up` and `/api/v1/health` return 200.
 - Repository layout: Laravel backend in `backend/`, Flutter app in `mobile/`.
 
 ## Technology stack (approved)
@@ -31,7 +32,8 @@ Action/Service layering, versioned API (`/api/v1`), thin controllers. See `docs/
 - **Email verification (configurable, off):** `/verify-email`, `/verify-email/{id}/{hash}`, `POST /email/verification-notification`
 - **Staff auth:** `/admin/login` (email), `POST /admin/logout`
 - **Admin dashboard:** `/admin` with cards Total Users (real customer count), Wallet Balance, Today's Sales, Today's Revenue, Pending Withdrawals, and a Recent Transactions panel. Modules without data show 0 / an empty state marked "Not live"; no figures are invented.
-- **Admin module placeholders (no business logic):** `/admin/{users, services, transactions, providers, payments, wallet, withdrawals, referrals, notifications, support, reports, settings, system-users, roles}`
+- **Admin settings:** `GET /admin/settings` (view, needs `settings.view`), `PUT /admin/settings` (save, needs `settings.view` + `settings.update`). Grouped, validated, success/error feedback.
+- **Admin module placeholders (no business logic):** `/admin/{users, services, transactions, providers, payments, wallet, withdrawals, referrals, notifications, support, reports, system-users, roles}`
 - **API auth:** `POST /api/v1/auth/token`, `DELETE /api/v1/auth/token`, `GET /api/v1/user`
 - **Console:** `php artisan nadabo:create-system-user {email} --role=<super-admin|manager|support|finance|viewer>` (password typed interactively)
 - **Customer type changes:** `App\Actions\Customers\ChangeUserType` (requires staff permission `customers.change-type`; UI in Phase 3)
@@ -42,7 +44,15 @@ Action/Service layering, versioned API (`/api/v1`), thin controllers. See `docs/
 - `system_users`: staff accounts (name, email, password, status, last login). `admin_sessions`: admin-area sessions.
 - spatie permission tables: `roles`, `permissions`, `model_has_roles`, `model_has_permissions`, `role_has_permissions` (staff only)
 - Sanctum: `personal_access_tokens` (customers only)
-- Seeded (`php artisan db:seed`): staff roles and permissions below. No accounts are seeded.
+- `settings`: key (unique), value (text), type (string, text, integer, decimal, boolean, json), group, label, description, is_public, is_encrypted, updated_by (system user), timestamps
+- Seeded (`php artisan db:seed`): staff roles and permissions below, and default settings `app.name`, `app.currency` (NGN), `app.currency_symbol` (₦), `app.timezone` (Africa/Lagos), `app.maintenance_mode` (false). No accounts or credentials are seeded. The settings seeder only adds missing keys, never overwriting staff edits.
+
+## Settings Store
+- Read/write through `App\Services\Settings\SettingsStore` (singleton): `get`, `set`, `has`, `forget`, `all`, `group`, plus `publicValues` (public, non-encrypted only). Values are cast by type; decimals stay strings (no precision loss). One cache entry, cleared on every write.
+- Known settings, their defaults, labels and extra validation live in `App\Support\Settings\SettingDefinitions`. Credentials are never defined there.
+- Sensitive future settings (API keys, SMTP passwords) are marked `is_encrypted`: stored encrypted with APP_KEY, never sent to the browser, blank input keeps the saved value, excluded from `publicValues`.
+- Nothing exposes settings to customers or the API.
+- Stored values are not yet wired into runtime behaviour (e.g. `app.maintenance_mode`, `app.timezone`); each feature reads them when it is built.
 
 ## Authentication and authorization rules
 - Login by email or Nigerian phone number (stored as `0XXXXXXXXXX`; `+234…` accepted). Passwords hashed with bcrypt; minimum 8 characters, mixed case and a number.
@@ -69,15 +79,17 @@ Action/Service layering, versioned API (`/api/v1`), thin controllers. See `docs/
 | `customers.update-status` | ✓ | ✓ | ✓ | | |
 | `customers.change-type` | ✓ | ✓ | | | |
 | `system-users.manage` | ✓ | | | | |
+| `settings.view` | ✓ | | | | |
+| `settings.update` | ✓ | | | | |
 
-Admin navigation (`App\Support\Admin\AdminModule`): each sidebar item and its page require the same permission. Dashboard = `admin.access`; Users = `customers.view`; System Users and Roles & Permissions = `system-users.manage`. Every other module uses a **reserved** permission (`services.view`, `transactions.view`, `providers.view`, `payments.view`, `wallet.view`, `withdrawals.view`, `referrals.view`, `notifications.view`, `support.view`, `reports.view`, `settings.view`) that is not seeded or granted yet, so only Super Admin sees those modules and the financial dashboard cards until each module is built and its permission approved. Result today: Super Admin sees all 15 items and all cards; Manager, Support, Finance and Viewer see Dashboard and Users, and only the Total Users card.
+Admin navigation (`App\Support\Admin\AdminModule`): each sidebar item and its page require the same permission. Dashboard = `admin.access`; Users = `customers.view`; Settings = `settings.view`; System Users and Roles & Permissions = `system-users.manage`. Every other module uses a **reserved** permission (`services.view`, `transactions.view`, `providers.view`, `payments.view`, `wallet.view`, `withdrawals.view`, `referrals.view`, `notifications.view`, `support.view`, `reports.view`) that is not seeded or granted yet, so only Super Admin sees those modules and the financial dashboard cards until each module is built and its permission approved. Result today: Super Admin sees all 15 items and all cards; Manager, Support, Finance and Viewer see Dashboard and Users, and only the Total Users card.
 
 ## Existing frontend structure
 - `resources/css/theme.css` (navy/blue tokens), `resources/css/app.css`, `resources/js/app.js` (Alpine)
 - Layouts: `layouts/base` (root), `layouts/guest` (auth card), `layouts/app` (signed-in shell with mobile menu)
 - Components: `x-input`, `x-button`, `x-alert`
 - Layouts also include `layouts/admin` (staff area: sidebar, top bar, mobile drawer, profile menu) with partials `admin/partials/{sidebar, topbar}`
-- Views: `auth/*` (incl. `verify-email`), `user/dashboard`, `user/profile`, `admin/auth/login`, `admin/dashboard`, `admin/placeholder`
+- Views: `auth/*` (incl. `verify-email`), `user/dashboard`, `user/profile`, `admin/auth/login`, `admin/dashboard`, `admin/placeholder`, `admin/settings/{index, field}`
 
 ## Existing backend structure
 - `app/Actions/Auth/{RegisterUser, AuthenticateUser}` (customers, web and API), `app/Actions/Admin/Auth/AuthenticateSystemUser` (staff), `app/Actions/Customers/ChangeUserType`
@@ -86,12 +98,13 @@ Admin navigation (`App\Support\Admin\AdminModule`): each sidebar item and its pa
 - `app/Http/Middleware/{UseAdminSession, EnsureUserIsActive, EnsureSystemUserIsActive, EnsureEmailIsVerifiedIfRequired}` (aliases `active`, `staff.active`, `verified.optional`; spatie `role`, `permission`)
 - Controllers: `Auth/*`, `User/*`, `Admin/{DashboardController, Auth/AdminSessionController}`, `Api/V1/{HealthController, Auth/*}`
 - `app/Support/Admin/AdminModule` (admin navigation registry), `app/Services/Admin/DashboardMetrics`, `app/Support/Money`
-- `app/Http/Controllers/Admin/{DashboardController, ModulePlaceholderController}`
+- `app/Http/Controllers/Admin/{DashboardController, ModulePlaceholderController, SettingsController}`
+- Settings: `app/Models/Setting`, `app/Services/Settings/SettingsStore`, `app/Support/Enums/SettingType`, `app/Support/Settings/SettingDefinitions`, `app/Actions/Settings/UpdateSettings`, `app/Http/Requests/Admin/UpdateSettingsRequest`, `database/seeders/SettingsSeeder`
 - `app/Console/Commands/CreateSystemUserCommand`
 - Tests: `tests/Feature/{Auth, User, Admin, Api/V1}`, `tests/Unit/UserPhoneTest`
 
 ## Not built (by instruction)
-Admin module contents (Users, Settings, System Users, Roles screens are the next Phase 3 steps), services, plans, providers/APIs, wallet, payment gateways, referral, KYC, business API endpoints, cPanel deployment.
+Admin module contents (Users, System Users, Roles screens are the next Phase 3 steps), services, plans, providers/APIs, wallet, payment gateways, referral, KYC, business API endpoints, cPanel deployment.
 
 ## Problems / blockers
 1. cPanel PHP 8.3 availability unconfirmed. Check before Phase 20, or earlier if you already have a host.

@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Models\SystemUser;
+use App\Services\Settings\SettingsStore;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
@@ -14,7 +15,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // One settings store per request/process so its in-memory copy is shared.
+        $this->app->singleton(SettingsStore::class);
     }
 
     /**

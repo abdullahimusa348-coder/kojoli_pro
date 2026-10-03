@@ -60,6 +60,7 @@ enum AdminModule: string
             self::Dashboard => SystemPermission::AdminAccess->value,
             self::Users => SystemPermission::CustomersView->value,
             self::SystemUsers, self::Roles => SystemPermission::SystemUsersManage->value,
+            self::Settings => SystemPermission::SettingsView->value,
             // Reserved, not granted to any role yet (Super Admin only).
             self::Services => 'services.view',
             self::Transactions => 'transactions.view',
@@ -71,16 +72,15 @@ enum AdminModule: string
             self::Notifications => 'notifications.view',
             self::Support => 'support.view',
             self::Reports => 'reports.view',
-            self::Settings => 'settings.view',
         };
     }
 
-    /** Roadmap phase in which the module is built (see ROADMAP.md). */
+    /** Roadmap phase in which the module is built (see ROADMAP.md); null once it is built. */
     public function plannedPhase(): ?int
     {
         return match ($this) {
-            self::Dashboard => null,
-            self::Users, self::Settings, self::SystemUsers, self::Roles => 3,
+            self::Dashboard, self::Settings => null,
+            self::Users, self::SystemUsers, self::Roles => 3,
             self::Services => 5,
             self::Providers => 7,
             self::Transactions, self::Wallet => 8,
@@ -90,6 +90,11 @@ enum AdminModule: string
             self::Notifications, self::Support => 15,
             self::Reports => 16,
         };
+    }
+
+    public function isBuilt(): bool
+    {
+        return $this->plannedPhase() === null;
     }
 
     public function routeName(): string
