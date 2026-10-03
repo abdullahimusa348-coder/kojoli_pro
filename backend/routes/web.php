@@ -4,6 +4,7 @@ use App\Http\Controllers\Admin\Auth\AdminSessionController;
 use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
 use App\Http\Controllers\Admin\ModulePlaceholderController;
 use App\Http\Controllers\Admin\SettingsController;
+use App\Http\Controllers\Admin\SystemUserController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\EmailVerificationController;
 use App\Http\Controllers\Auth\NewPasswordController;
@@ -85,6 +86,20 @@ Route::prefix('admin')->name('admin.')->group(function () {
                     'permission:'.SystemPermission::SettingsUpdate->value.',admin',
                 ])
                 ->name('settings.update');
+        });
+
+        // System Users (staff accounts)
+        Route::middleware([
+            'permission:'.SystemPermission::AdminAccess->value.',admin',
+            'permission:'.SystemPermission::SystemUsersManage->value.',admin',
+        ])->prefix('system-users')->name('system-users')->group(function () {
+            Route::get('/', [SystemUserController::class, 'index']);
+            Route::get('create', [SystemUserController::class, 'create'])->name('.create');
+            Route::post('/', [SystemUserController::class, 'store'])->name('.store');
+            Route::get('{systemUser}/edit', [SystemUserController::class, 'edit'])->name('.edit');
+            Route::put('{systemUser}', [SystemUserController::class, 'update'])->name('.update');
+            Route::patch('{systemUser}/status', [SystemUserController::class, 'updateStatus'])->name('.status');
+            Route::delete('{systemUser}', [SystemUserController::class, 'destroy'])->name('.destroy');
         });
 
         // Modules not built yet: navigation placeholders only, no business logic.

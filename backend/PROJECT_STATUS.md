@@ -1,13 +1,14 @@
 # PROJECT STATUS: Nadabo Global Data
 
-Last updated: 2026-10-03 · Stage: **Phase 3 Step 2 complete and closed: Settings Store** (Step 1 admin dashboard foundation also complete). Phase 3 Step 3 not started; awaiting approval
+Last updated: 2026-10-03 · Stage: **Phase 3 Step 3 complete: System Users management** (Steps 1 and 2 also complete). Later Phase 3 steps not started; awaiting approval
 
 ## Current state
 - Phase 1 foundation installed and verified with `scripts/bootstrap.sh`: Laravel 12.69.3, PHP 8.3.6, Node 22 / npm 10, MariaDB 10.11.
 - Phase 2 adds customer authentication, user types, account status, a profile page, a user dashboard shell, and Sanctum token authentication for the future mobile app.
 - Pre-Phase-3 changes: staff (System Users) are fully separate from customers, with 5 roles on their own guard; configurable email verification (off); configurable API token expiry. - Phase 3 Step 1: admin layout (sidebar, top bar, mobile drawer, profile menu, logout), dashboard home with foundation cards, and permission-guarded placeholder pages for every planned module.
 - Phase 3 Step 2: database-backed Settings Store (typed, cached, optional encryption for future secrets) and a working `/admin/settings` screen. 152 Pest tests pass.
-- Phase 3 Step 2 closing check (2026-10-03): desktop (1440px) and mobile (390px) visual check of `/admin/settings`; invalid save shows a summary banner and per-field errors (required name, 3-letter currency, valid timezone) and keeps the typed input; valid save shows "Settings saved." and the values persist after a fresh reload; no JavaScript errors or horizontal scrolling. 152 tests, Pint, build and route/config/view/event cache checks pass. `/up` and `/api/v1/health` return 200.
+- Phase 3 Step 2 closing check (2026-10-03): desktop (1440px) and mobile (390px) visual check of `/admin/settings`; invalid save shows a summary banner and per-field errors (required name, 3-letter currency, valid timezone) and keeps the typed input; valid save shows "Settings saved." and the values persist after a fresh reload; no JavaScript errors or horizontal scrolling. 152 tests, Pint, build and route/config/view/event cache checks pass.
+- Phase 3 Step 3: System Users (staff accounts) management at `/admin/system-users`: list with search and role/status filters, create, edit (optional password change), activate/deactivate, soft delete, one role per staff member, safety rules. 198 Pest tests pass. `/up` and `/api/v1/health` return 200.
 - Repository layout: Laravel backend in `backend/`, Flutter app in `mobile/`.
 
 ## Technology stack (approved)
@@ -34,7 +35,8 @@ Action/Service layering, versioned API (`/api/v1`), thin controllers. See `docs/
 - **Staff auth:** `/admin/login` (email), `POST /admin/logout`
 - **Admin dashboard:** `/admin` with cards Total Users (real customer count), Wallet Balance, Today's Sales, Today's Revenue, Pending Withdrawals, and a Recent Transactions panel. Modules without data show 0 / an empty state marked "Not live"; no figures are invented.
 - **Admin settings:** `GET /admin/settings` (view, needs `settings.view`), `PUT /admin/settings` (save, needs `settings.view` + `settings.update`). Grouped, validated, success/error feedback.
-- **Admin module placeholders (no business logic):** `/admin/{users, services, transactions, providers, payments, wallet, withdrawals, referrals, notifications, support, reports, system-users, roles}`
+- **System Users (staff):** `/admin/system-users` (list, search, filter), `/create`, `POST`, `/{id}/edit`, `PUT /{id}`, `PATCH /{id}/status`, `DELETE /{id}`. All need `admin.access` + `system-users.manage`.
+- **Admin module placeholders (no business logic):** `/admin/{users, services, transactions, providers, payments, wallet, withdrawals, referrals, notifications, support, reports, roles}`
 - **API auth:** `POST /api/v1/auth/token`, `DELETE /api/v1/auth/token`, `GET /api/v1/user`
 - **Console:** `php artisan nadabo:create-system-user {email} --role=<super-admin|manager|support|finance|viewer>` (password typed interactively)
 - **Customer type changes:** `App\Actions\Customers\ChangeUserType` (requires staff permission `customers.change-type`; UI in Phase 3)
@@ -42,7 +44,7 @@ Action/Service layering, versioned API (`/api/v1`), thin controllers. See `docs/
 ## Existing database structure
 - Laravel defaults: `users`, `password_reset_tokens`, `sessions`, `cache`, `jobs`
 - `users` extra columns: `phone` (unique, nullable), `user_type` (subscriber, vendor, affiliate, api_user), `status` (active, disabled), `last_login_at`, `last_login_ip`
-- `system_users`: staff accounts (name, email, password, status, last login). `admin_sessions`: admin-area sessions.
+- `system_users`: staff accounts (name, email, optional unique phone, password, status, last login, `deleted_at` for soft delete). `admin_sessions`: admin-area sessions.
 - spatie permission tables: `roles`, `permissions`, `model_has_roles`, `model_has_permissions`, `role_has_permissions` (staff only)
 - Sanctum: `personal_access_tokens` (customers only)
 - `settings`: key (unique), value (text), type (string, text, integer, decimal, boolean, json), group, label, description, is_public, is_encrypted, updated_by (system user), timestamps
@@ -72,6 +74,9 @@ Action/Service layering, versioned API (`/api/v1`), thin controllers. See `docs/
 - Separate login throttling (5 failures per email + IP).
 - Disabled staff, or staff without a role, cannot sign in; a disabled account is signed out on its next request.
 - Roles and permissions (spatie, `admin` guard). Super Admin passes every check while active.
+- Management (`/admin/system-users`, permission `system-users.manage`, Super Admin only by default): one role per staff member; passwords set by the admin are hashed and never shown (edit leaves password blank to keep it). Safety rules in `App\Actions\Admin\SystemUsers\SystemUserRules`, enforced even for Super Admin: no self-deactivation, self-deletion or own-role change; the last active Super Admin cannot be deactivated, deleted or demoted; only a Super Admin can grant the Super Admin role or change a Super Admin account.
+- Delete is a soft delete: the account is disabled, hidden from the list, cannot sign in (an open session ends on the next request), and its email stays reserved. There is no restore screen yet.
+- No audit/activity log exists yet (Phase 16); staff-account changes are not recorded beyond timestamps.
 
 | Permission | Super Admin | Manager | Support | Finance | Viewer |
 |---|---|---|---|---|---|
@@ -99,13 +104,14 @@ Admin navigation (`App\Support\Admin\AdminModule`): each sidebar item and its pa
 - `app/Http/Middleware/{UseAdminSession, EnsureUserIsActive, EnsureSystemUserIsActive, EnsureEmailIsVerifiedIfRequired}` (aliases `active`, `staff.active`, `verified.optional`; spatie `role`, `permission`)
 - Controllers: `Auth/*`, `User/*`, `Admin/{DashboardController, Auth/AdminSessionController}`, `Api/V1/{HealthController, Auth/*}`
 - `app/Support/Admin/AdminModule` (admin navigation registry), `app/Services/Admin/DashboardMetrics`, `app/Support/Money`
-- `app/Http/Controllers/Admin/{DashboardController, ModulePlaceholderController, SettingsController}`
+- `app/Http/Controllers/Admin/{DashboardController, ModulePlaceholderController, SettingsController, SystemUserController}`
+- System Users: `app/Actions/Admin/SystemUsers/{SystemUserRules, CreateSystemUser, UpdateSystemUser, ChangeSystemUserStatus, DeleteSystemUser}`, `app/Http/Requests/Admin/SystemUsers/*`, views `admin/system-users/{index, create, edit, form}`
 - Settings: `app/Models/Setting`, `app/Services/Settings/SettingsStore`, `app/Support/Enums/SettingType`, `app/Support/Settings/SettingDefinitions`, `app/Actions/Settings/UpdateSettings`, `app/Http/Requests/Admin/UpdateSettingsRequest`, `database/seeders/SettingsSeeder`
 - `app/Console/Commands/CreateSystemUserCommand`
 - Tests: `tests/Feature/{Auth, User, Admin, Api/V1}`, `tests/Unit/UserPhoneTest`
 
 ## Not built (by instruction)
-Admin module contents (Users, System Users, Roles screens are the next Phase 3 steps), services, plans, providers/APIs, wallet, payment gateways, referral, KYC, business API endpoints, cPanel deployment.
+Admin module contents (Users and Roles & Permissions screens are later Phase 3 steps), services, plans, providers/APIs, wallet, payment gateways, referral, KYC, business API endpoints, cPanel deployment.
 
 ## Problems / blockers
 1. cPanel PHP 8.3 availability unconfirmed. Check before Phase 20, or earlier if you already have a host.
