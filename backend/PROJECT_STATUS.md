@@ -1,6 +1,6 @@
 # PROJECT STATUS: Nadabo Global Data
 
-Last updated: 2026-10-03 · Stage: **Phase 3 Step 5 complete and closed: Customer Users Management** (Steps 1–4 also complete). No later Phase 3 step started; awaiting approval
+Last updated: 2026-10-03 · Stage: **Phase 3 complete and closed: Admin Dashboard foundation** (Steps 1–5). Phase 4 not started; awaiting approval
 
 ## Current state
 - Phase 1 foundation installed and verified with `scripts/bootstrap.sh`: Laravel 12.69.3, PHP 8.3.6, Node 22 / npm 10, MariaDB 10.11.
@@ -12,7 +12,8 @@ Last updated: 2026-10-03 · Stage: **Phase 3 Step 5 complete and closed: Custome
 - Phase 3 Step 3 closing check (2026-10-03): clean working tree, 198 tests passing, Pint, build and route/config/view/event cache checks pass; Step 3 diff reviewed (no unrelated changes, secrets, customer-view or mobile changes); temporary verification accounts and sessions removed from the local database.
 - Phase 3 Step 4: Roles & Permissions management at `/admin/roles` (list with search/type filter, create, edit, delete custom roles) with a permission matrix grouped by 16 modules; 36-permission catalog; custom roles assignable to staff. 241 Pest tests pass.
 - Phase 3 Step 5: Customer Users management at `/admin/users`: list with search (name, email, phone in any format, ID) and type/status filters, pagination, safe customer details, enable/disable (revokes API tokens), type change via `ChangeUserType`, profile edit, password-reset email. No deletion. 288 Pest tests pass.
-- Phase 3 Step 5 closing check (2026-10-03): clean working tree in sync with GitHub, 288 tests passing, Pint, build and route/config/view/event cache checks pass, all 11 migrations ran; Step 5 diff reviewed (no unrelated changes, secrets, customer-view or mobile changes); no verification customers, staff, tokens, reset tokens, sessions or custom roles left in the local database. `/up` and `/api/v1/health` return 200.
+- Phase 3 Step 5 closing check (2026-10-03): clean working tree in sync with GitHub, 288 tests passing, Pint, build and route/config/view/event cache checks pass, all 11 migrations ran; Step 5 diff reviewed (no unrelated changes, secrets, customer-view or mobile changes); no verification customers, staff, tokens, reset tokens, sessions or custom roles left in the local database.
+- **Phase 3 closed (2026-10-03):** all roadmap goals met (admin layout and navigation, database settings store, System Users) plus Roles & Permissions and Customer Users; done-when criterion "admin can log in and manage settings without `.env`" met. Final check: clean tree in sync with GitHub, 288 tests passing, Pint, build and route/config/view/event caches pass, 11 migrations ran, `/up`, `/api/v1/health`, `/admin/login` and `/login` return 200, no secrets tracked, no verification data left. Open items carried forward are listed under "Carried forward from Phase 3". `/up` and `/api/v1/health` return 200.
 - Repository layout: Laravel backend in `backend/`, Flutter app in `mobile/`.
 
 ## Technology stack (approved)
@@ -144,8 +145,14 @@ Business modules: services, plans, providers/APIs, wallet, payment gateways, ref
 1. cPanel PHP 8.3 availability unconfirmed. Check before Phase 20, or earlier if you already have a host.
 2. Password-reset and verification emails use `MAIL_MAILER=log` locally. Real SMTP details are needed before launch or before switching verification on.
 3. Tests use in-memory SQLite, so `pdo_sqlite` must be enabled locally.
-4. Staff have no self-service password reset yet; a Super Admin (Phase 3 UI) or the console command manages staff accounts.
+4. Staff have no self-service password reset yet; a Super Admin (System Users page) or the console command manages staff passwords.
 5. The scheduler (`php artisan schedule:run` every minute via cron) must be set up at deployment so expired API tokens are pruned.
+
+## Carried forward from Phase 3 (not blocking)
+1. Logo and brand assets: still needed from the business; apply when provided.
+2. Business rules for upgrading customers to Vendor, Affiliate or API User (fees, approval): staff can change type now; rules due by Phase 6.
+3. Staff self-service password reset (email): not built; staff passwords are managed by a Super Admin in System Users or the console command.
+4. Audit log of staff actions: planned for Phase 16; changes are reflected only in timestamps until then.
 
 ## Approved decisions (pre-Phase 3)
 1. No Breeze; keep the custom auth. 2. Public sign-up creates Subscribers only. 3. Vendor/Affiliate/API User assigned only by authorized staff. 4. Password reset by email only (no SMS). 5. Email verification configurable, default off. 6. Token expiry configurable, no hard-coded limit. 7. Staff fully separate from customers, 5 roles.
@@ -155,7 +162,7 @@ Business modules: services, plans, providers/APIs, wallet, payment gateways, ref
 - Provider/API documentation for each service (Phase 7 and 10)
 - Gateway accounts and docs for Monnify and Aspfiy (Phase 9)
 - Business rules: pricing tiers, commission and referral rates, withdrawal limits and fees (Phases 6, 12, 14)
-- Rules for upgrading a customer to Vendor, Affiliate or API User (Phase 3 or 6)
+- Rules for upgrading a customer to Vendor, Affiliate or API User (Phase 6)
 - Confirmed KYC rules per provider (Phase 13)
 - SMTP / SMS provider for account emails and OTPs
-- Logo and brand assets (Phase 3)
+- Logo and brand assets (carried forward from Phase 3)
