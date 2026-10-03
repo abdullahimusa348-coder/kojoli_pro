@@ -1,6 +1,6 @@
 # PROJECT STATUS: Nadabo Global Data
 
-Last updated: 2026-10-03 · Stage: **Phase 3 Step 3 complete: System Users management** (Steps 1 and 2 also complete). Later Phase 3 steps not started; awaiting approval
+Last updated: 2026-10-03 · Stage: **Phase 3 Step 3 complete and closed: System Users management** (Steps 1 and 2 also complete). Phase 3 Step 4 not started; awaiting approval
 
 ## Current state
 - Phase 1 foundation installed and verified with `scripts/bootstrap.sh`: Laravel 12.69.3, PHP 8.3.6, Node 22 / npm 10, MariaDB 10.11.
@@ -8,7 +8,8 @@ Last updated: 2026-10-03 · Stage: **Phase 3 Step 3 complete: System Users manag
 - Pre-Phase-3 changes: staff (System Users) are fully separate from customers, with 5 roles on their own guard; configurable email verification (off); configurable API token expiry. - Phase 3 Step 1: admin layout (sidebar, top bar, mobile drawer, profile menu, logout), dashboard home with foundation cards, and permission-guarded placeholder pages for every planned module.
 - Phase 3 Step 2: database-backed Settings Store (typed, cached, optional encryption for future secrets) and a working `/admin/settings` screen. 152 Pest tests pass.
 - Phase 3 Step 2 closing check (2026-10-03): desktop (1440px) and mobile (390px) visual check of `/admin/settings`; invalid save shows a summary banner and per-field errors (required name, 3-letter currency, valid timezone) and keeps the typed input; valid save shows "Settings saved." and the values persist after a fresh reload; no JavaScript errors or horizontal scrolling. 152 tests, Pint, build and route/config/view/event cache checks pass.
-- Phase 3 Step 3: System Users (staff accounts) management at `/admin/system-users`: list with search and role/status filters, create, edit (optional password change), activate/deactivate, soft delete, one role per staff member, safety rules. 198 Pest tests pass. `/up` and `/api/v1/health` return 200.
+- Phase 3 Step 3: System Users (staff accounts) management at `/admin/system-users`: list with search and role/status filters, create, edit (optional password change), activate/deactivate, soft delete, one role per staff member, safety rules. 198 Pest tests pass.
+- Phase 3 Step 3 closing check (2026-10-03): clean working tree, 198 tests passing, Pint, build and route/config/view/event cache checks pass; Step 3 diff reviewed (no unrelated changes, secrets, customer-view or mobile changes); temporary verification accounts and sessions removed from the local database. `/up` and `/api/v1/health` return 200.
 - Repository layout: Laravel backend in `backend/`, Flutter app in `mobile/`.
 
 ## Technology stack (approved)
