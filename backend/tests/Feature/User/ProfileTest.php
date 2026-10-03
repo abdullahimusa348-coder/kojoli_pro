@@ -9,20 +9,32 @@ it('shows the dashboard and profile to a signed-in user', function () {
     $this->actingAs($user)->get('/profile')->assertOk()->assertSee('Account details');
 });
 
-it('updates name, email and phone', function () {
-    $user = User::factory()->create();
+it('updates name and email', function () {
+    $user = User::factory()->create(['phone' => '08031112222']);
 
     $this->actingAs($user)->patch('/profile', [
         'name' => 'New Name',
         'email' => 'New@Example.com',
-        'phone' => '0901 234 5678',
     ])->assertSessionHasNoErrors()->assertRedirect(route('profile.edit'));
 
     $user->refresh();
     expect($user->name)->toBe('New Name')
         ->and($user->email)->toBe('new@example.com')
-        ->and($user->phone)->toBe('09012345678')
+        ->and($user->phone)->toBe('08031112222')
         ->and($user->email_verified_at)->toBeNull();
+});
+
+it('rejects phone changes from the customer profile form', function () {
+    $user = User::factory()->create(['phone' => '08031112222']);
+
+    $this->actingAs($user)->patch('/profile', [
+        'name' => 'New Name',
+        'email' => $user->email,
+        'phone' => '0901 234 5678',
+    ])->assertSessionHasErrors('phone');
+
+    expect($user->fresh()->phone)->toBe('08031112222')
+        ->and($user->fresh()->name)->not->toBe('New Name');
 });
 
 it('keeps the email verified when it does not change', function () {
@@ -31,7 +43,6 @@ it('keeps the email verified when it does not change', function () {
     $this->actingAs($user)->patch('/profile', [
         'name' => 'New Name',
         'email' => $user->email,
-        'phone' => $user->phone,
     ])->assertSessionHasNoErrors();
 
     expect($user->fresh()->email_verified_at)->not->toBeNull();
@@ -43,7 +54,6 @@ it('does not let users change their own type or status', function () {
     $this->actingAs($user)->patch('/profile', [
         'name' => $user->name,
         'email' => $user->email,
-        'phone' => $user->phone,
         'user_type' => 'api_user',
         'status' => 'disabled',
     ]);

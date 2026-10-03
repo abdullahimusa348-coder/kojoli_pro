@@ -119,7 +119,6 @@ describe('when ON', function () {
         $this->actingAs($user)->patch('/profile', [
             'name' => $user->name,
             'email' => 'changed@example.com',
-            'phone' => $user->phone,
         ]);
 
         Notification::assertSentTo($user, VerifyEmail::class);
