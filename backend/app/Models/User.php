@@ -2,31 +2,31 @@
 
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
 use App\Support\Enums\UserStatus;
 use App\Support\Enums\UserType;
 use Database\Factories\UserFactory;
+use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
-use Spatie\Permission\Traits\HasRoles;
 
-class User extends Authenticatable
+/**
+ * Customer account. Staff/admin accounts are SystemUser (separate table and guard);
+ * customers never hold roles or permissions.
+ */
+class User extends Authenticatable implements MustVerifyEmail
 {
     /** @use HasFactory<UserFactory> */
-    use HasApiTokens, HasFactory, HasRoles, Notifiable;
-
-    /** Permission that grants entry to the admin area. */
-    public const ADMIN_ACCESS = 'admin.access';
+    use HasApiTokens, HasFactory, Notifiable;
 
     /**
      * The attributes that are mass assignable.
      *
      * user_type and status are deliberately excluded: they are set
-     * explicitly by Actions or admins, never from request input.
+     * explicitly by Actions or authorized staff, never from request input.
      *
      * @var list<string>
      */
@@ -86,9 +86,18 @@ class User extends Authenticatable
         return $this->user_type === $type;
     }
 
-    public function canAccessAdmin(): bool
+    /** Whether customers must verify their email (config nadabo.require_email_verification). */
+    public static function emailVerificationRequired(): bool
     {
-        return $this->isActive() && $this->can(self::ADMIN_ACCESS);
+        return (bool) config('nadabo.require_email_verification');
+    }
+
+    /** Only sends while email verification is switched on, so nothing is mailed by default. */
+    public function sendEmailVerificationNotification(): void
+    {
+        if (static::emailVerificationRequired() && ! $this->hasVerifiedEmail()) {
+            parent::sendEmailVerificationNotification();
+        }
     }
 
     /** @param  Builder<User>  $query */

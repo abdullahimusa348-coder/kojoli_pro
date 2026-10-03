@@ -2,8 +2,7 @@
 
 namespace App\Providers;
 
-use App\Models\User;
-use Database\Seeders\RolesAndPermissionsSeeder;
+use App\Models\SystemUser;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
@@ -25,7 +24,8 @@ class AppServiceProvider extends ServiceProvider
     {
         Password::defaults(fn () => Password::min(8)->letters()->mixedCase()->numbers());
 
-        // Super admins pass every authorization check; everyone else goes through permissions/policies.
-        Gate::before(fn (User $user) => $user->hasRole(RolesAndPermissionsSeeder::SUPER_ADMIN) ? true : null);
+        // Active Super Admin staff pass every authorization check; everyone else goes through
+        // permissions/policies. Customers (User) never hold roles, so this never applies to them.
+        Gate::before(fn ($user) => $user instanceof SystemUser && $user->isActive() && $user->isSuperAdmin() ? true : null);
     }
 }

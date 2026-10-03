@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\SystemUser;
 use App\Models\User;
 use Laravel\Sanctum\PersonalAccessToken;
 
@@ -56,4 +57,60 @@ it('revokes the current token on logout', function () {
     $this->withToken($token)->deleteJson('/api/v1/auth/token')->assertNoContent();
 
     expect(PersonalAccessToken::count())->toBe(0);
+});
+
+it('issues non-expiring tokens when no expiration is configured', function () {
+    config(['sanctum.expiration' => null]);
+    $user = User::factory()->create();
+
+    $this->postJson('/api/v1/auth/token', ['login' => $user->email, 'password' => 'password', 'device_name' => 'x'])
+        ->assertCreated()
+        ->assertJsonPath('expires_at', null);
+
+    expect(PersonalAccessToken::first()->expires_at)->toBeNull();
+});
+
+it('applies the configured token lifetime', function () {
+    config(['sanctum.expiration' => 60]);
+    $user = User::factory()->create();
+
+    $token = $this->postJson('/api/v1/auth/token', ['login' => $user->email, 'password' => 'password', 'device_name' => 'x'])
+        ->assertCreated()
+        ->assertJsonPath('expires_at', fn (string $at) => abs(now()->addMinutes(60)->diffInSeconds($at)) < 5)
+        ->json('access_token');
+
+    $this->withToken($token)->getJson('/api/v1/user')->assertOk();
+
+    $this->travel(61)->minutes();
+    $this->app['auth']->forgetGuards();
+
+    $this->withToken($token)->getJson('/api/v1/user')->assertUnauthorized();
+});
+
+it('reads the token lifetime from SANCTUM_TOKEN_EXPIRATION', function () {
+    $read = function (?string $value): mixed {
+        $value === null ? putenv('SANCTUM_TOKEN_EXPIRATION') : putenv("SANCTUM_TOKEN_EXPIRATION={$value}");
+        $_ENV['SANCTUM_TOKEN_EXPIRATION'] = $_SERVER['SANCTUM_TOKEN_EXPIRATION'] = $value;
+        if ($value === null) {
+            unset($_ENV['SANCTUM_TOKEN_EXPIRATION'], $_SERVER['SANCTUM_TOKEN_EXPIRATION']);
+        }
+
+        return (require config_path('sanctum.php'))['expiration'];
+    };
+
+    try {
+        expect($read(null))->toBeNull()
+            ->and($read(''))->toBeNull()
+            ->and($read('0'))->toBeNull()
+            ->and($read('43200'))->toBe(43200);
+    } finally {
+        $read(null);
+    }
+});
+
+it('never issues API tokens to staff accounts', function () {
+    $staff = SystemUser::factory()->create();
+
+    $this->postJson('/api/v1/auth/token', ['login' => $staff->email, 'password' => 'password', 'device_name' => 'x'])
+        ->assertUnprocessable();
 });

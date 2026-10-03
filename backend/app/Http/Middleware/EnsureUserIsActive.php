@@ -2,22 +2,24 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\User;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Ends access for accounts disabled after they signed in.
+ * Ends access for customer accounts disabled after they signed in.
  * Web: logs out and returns to the login page. API: 403 JSON.
  */
 class EnsureUserIsActive
 {
     public function handle(Request $request, Closure $next): Response
     {
+        // Default guard: web session on web routes, Sanctum token on API routes.
         $user = $request->user();
 
-        if ($user === null || $user->isActive()) {
+        if (! $user instanceof User || $user->isActive()) {
             return $next($request);
         }
 

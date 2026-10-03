@@ -3,6 +3,7 @@
 use App\Http\Controllers\Admin\Auth\AdminSessionController;
 use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
+use App\Http\Controllers\Auth\EmailVerificationController;
 use App\Http\Controllers\Auth\NewPasswordController;
 use App\Http\Controllers\Auth\PasswordResetLinkController;
 use App\Http\Controllers\Auth\RegisteredUserController;
@@ -16,7 +17,7 @@ Route::get('/', function () {
 });
 
 // Guest (customer) authentication
-Route::middleware('guest')->group(function () {
+Route::middleware('guest:web')->group(function () {
     Route::get('register', [RegisteredUserController::class, 'create'])->name('register');
     Route::post('register', [RegisteredUserController::class, 'store'])->middleware('throttle:10,1');
 
@@ -33,24 +34,39 @@ Route::middleware('guest')->group(function () {
 });
 
 // Authenticated customer area
-Route::middleware(['auth', 'auth.session'])->group(function () {
+Route::middleware(['auth:web', 'auth.session'])->group(function () {
     Route::post('logout', [AuthenticatedSessionController::class, 'destroy'])->name('logout');
 
-    Route::get('dashboard', DashboardController::class)->name('dashboard');
+    // Email verification (enforced only when nadabo.require_email_verification is on)
+    Route::get('verify-email', [EmailVerificationController::class, 'notice'])->name('verification.notice');
+    Route::get('verify-email/{id}/{hash}', [EmailVerificationController::class, 'verify'])
+        ->middleware(['signed', 'throttle:6,1'])
+        ->name('verification.verify');
+    Route::post('email/verification-notification', [EmailVerificationController::class, 'send'])
+        ->middleware('throttle:6,1')
+        ->name('verification.send');
+
+    // Profile stays reachable while unverified, so a mistyped email can be corrected.
+    Route::get('dashboard', DashboardController::class)->middleware('verified.optional')->name('dashboard');
 
     Route::get('profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::put('profile/password', [PasswordController::class, 'update'])->name('profile.password.update');
 });
 
-// Admin authentication foundation (full admin dashboard is Phase 3)
+// Admin area: staff only (system_users, `admin` guard, separate session cookie).
+// Customer sessions are never read here. The full admin dashboard is Phase 3.
 Route::prefix('admin')->name('admin.')->group(function () {
-    Route::middleware('guest')->group(function () {
+    Route::middleware('guest:admin')->group(function () {
         Route::get('login', [AdminSessionController::class, 'create'])->name('login');
         Route::post('login', [AdminSessionController::class, 'store'])->name('login.store');
     });
 
-    Route::middleware(['auth', 'auth.session', 'admin'])->group(function () {
-        Route::get('/', AdminDashboardController::class)->name('dashboard');
+    Route::middleware(['auth:admin', 'staff.active'])->group(function () {
+        Route::post('logout', [AdminSessionController::class, 'destroy'])->name('logout');
+
+        Route::get('/', AdminDashboardController::class)
+            ->middleware('permission:admin.access,admin')
+            ->name('dashboard');
     });
 });

@@ -30,7 +30,10 @@
 ## Engineering conventions
 - Money: integer minor units (kobo), never floats.
 - Wallet and transactions: append-only ledger, DB transactions with row locking, idempotency keys on every purchase and webhook.
-- Customer tier is `users.user_type` (`App\Support\Enums\UserType`); staff access is spatie roles/permissions (`admin.access`, `super-admin` via `Gate::before`). Add tiers as enum cases, staff abilities as permissions.
-- Authentication: custom session controllers (Breeze-style) and Sanctum tokens (`/api/v1/auth/token`). Web, admin and API all verify credentials through `App\Actions\Auth\AuthenticateUser`.
+- Customers (`users`, `User`, `web` guard, Sanctum tokens) and staff (`system_users`, `SystemUser`, `admin` guard) are separate account systems. The admin area has its own session cookie (path `/admin`) and session table, set by `UseAdminSession`. Customer routes use `auth:web`; admin routes use `auth:admin`.
+- Customer tier is `users.user_type` (`App\Support\Enums\UserType`), changed only through `ChangeUserType` by staff with `customers.change-type`. Customers never hold roles.
+- Staff access is spatie roles/permissions on the `admin` guard (`SystemRole`, `SystemPermission`; Super Admin via `Gate::before`). Add staff abilities as `SystemPermission` cases and map them in `SystemRole::permissions()`, then re-run the seeder.
+- Authentication: custom session controllers (Breeze-style). Customers sign in through `AuthenticateUser` (web and API), staff through `AuthenticateSystemUser`; both use `LoginThrottle` with separate counters.
+- Configurable: email verification (`NADABO_REQUIRE_EMAIL_VERIFICATION`), API token lifetime (`SANCTUM_TOKEN_EXPIRATION`).
 - Audit logs for admin and money-moving actions (Phase 16).
 - Never log secrets, tokens, BVN/NIN or card data.

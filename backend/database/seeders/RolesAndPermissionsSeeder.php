@@ -2,30 +2,34 @@
 
 namespace Database\Seeders;
 
-use App\Models\User;
+use App\Support\Enums\SystemPermission;
+use App\Support\Enums\SystemRole;
 use Illuminate\Database\Seeder;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 
 /**
- * Staff roles and permissions. Idempotent: safe to run on every deploy.
- * Customer tiers (Subscriber, Vendor, ...) are the users.user_type column, not roles.
+ * Staff roles and permissions on the `admin` guard. Idempotent: safe to run on
+ * every deploy, and it resets each role to exactly its defined permissions.
+ * Customers (users table) never hold roles; their tier is users.user_type.
  */
 class RolesAndPermissionsSeeder extends Seeder
 {
-    public const SUPER_ADMIN = 'super-admin';
-
-    public const ADMIN = 'admin';
+    public const GUARD = 'admin';
 
     public function run(): void
     {
         app(PermissionRegistrar::class)->forgetCachedPermissions();
 
-        $adminAccess = Permission::findOrCreate(User::ADMIN_ACCESS, 'web');
+        foreach (SystemPermission::cases() as $permission) {
+            Permission::findOrCreate($permission->value, self::GUARD);
+        }
 
-        // super-admin bypasses every check via Gate::before (AppServiceProvider).
-        Role::findOrCreate(self::SUPER_ADMIN, 'web');
-        Role::findOrCreate(self::ADMIN, 'web')->givePermissionTo($adminAccess);
+        foreach (SystemRole::cases() as $role) {
+            Role::findOrCreate($role->value, self::GUARD)->syncPermissions($role->permissions());
+        }
+
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
     }
 }

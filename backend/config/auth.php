@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\SystemUser;
 use App\Models\User;
 
 return [
@@ -42,6 +43,13 @@ return [
             'driver' => 'session',
             'provider' => 'users',
         ],
+
+        // Staff / admin area. Separate provider (system_users) and a separate
+        // session cookie and table (see UseAdminSession middleware).
+        'admin' => [
+            'driver' => 'session',
+            'provider' => 'system_users',
+        ],
     ],
 
     /*
@@ -65,6 +73,11 @@ return [
         'users' => [
             'driver' => 'eloquent',
             'model' => env('AUTH_MODEL', User::class),
+        ],
+
+        'system_users' => [
+            'driver' => 'eloquent',
+            'model' => SystemUser::class,
         ],
 
         // 'users' => [

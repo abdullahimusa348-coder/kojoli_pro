@@ -12,7 +12,7 @@ class DatabaseSeeder extends Seeder
     /**
      * Seed the application's database.
      *
-     * No users are seeded. Create the first admin with `php artisan nadabo:create-admin`.
+     * No users are seeded. Create the first staff account with `php artisan nadabo:create-system-user`.
      */
     public function run(): void
     {

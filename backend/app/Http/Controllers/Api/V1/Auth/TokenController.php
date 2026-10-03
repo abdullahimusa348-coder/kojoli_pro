@@ -20,11 +20,16 @@ class TokenController extends Controller
     {
         $user = $authenticate->handle($request->validated('login'), $request->validated('password'), (string) $request->ip());
 
-        $token = $user->createToken($request->validated('device_name'));
+        // Lifetime comes from config('sanctum.expiration') (SANCTUM_TOKEN_EXPIRATION, minutes); null = no expiry.
+        $minutes = config('sanctum.expiration');
+        $expiresAt = $minutes ? now()->addMinutes((int) $minutes) : null;
+
+        $token = $user->createToken($request->validated('device_name'), ['*'], $expiresAt);
 
         return response()->json([
             'token_type' => 'Bearer',
             'access_token' => $token->plainTextToken,
+            'expires_at' => $expiresAt?->toIso8601String(),
             'user' => new UserResource($user),
         ], Response::HTTP_CREATED);
     }

@@ -1,11 +1,15 @@
 <?php
 
-use App\Http\Middleware\EnsureUserCanAccessAdmin;
+use App\Http\Middleware\EnsureEmailIsVerifiedIfRequired;
+use App\Http\Middleware\EnsureSystemUserIsActive;
 use App\Http\Middleware\EnsureUserIsActive;
+use App\Http\Middleware\UseAdminSession;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
+use Spatie\Permission\Middleware\PermissionMiddleware;
+use Spatie\Permission\Middleware\RoleMiddleware;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -17,16 +21,24 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
             'active' => EnsureUserIsActive::class,
-            'admin' => EnsureUserCanAccessAdmin::class,
+            'staff.active' => EnsureSystemUserIsActive::class,
+            'verified.optional' => EnsureEmailIsVerifiedIfRequired::class,
+            'role' => RoleMiddleware::class,
+            'permission' => PermissionMiddleware::class,
         ]);
 
-        // Sign out web sessions of accounts that were disabled after login.
+        // Admin area gets its own session cookie/table; must run before the session starts.
+        $middleware->web(prepend: [UseAdminSession::class]);
+
+        // Sign out web sessions of customer accounts that were disabled after login.
         $middleware->web(append: [EnsureUserIsActive::class]);
 
-        $middleware->redirectGuestsTo(fn (Request $request) => $request->is('admin', 'admin/*')
+        $middleware->redirectGuestsTo(fn (Request $request) => UseAdminSession::isAdminRequest($request)
             ? route('admin.login')
             : route('login'));
-        $middleware->redirectUsersTo(fn () => route('dashboard'));
+        $middleware->redirectUsersTo(fn (Request $request) => UseAdminSession::isAdminRequest($request)
+            ? route('admin.dashboard')
+            : route('dashboard'));
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

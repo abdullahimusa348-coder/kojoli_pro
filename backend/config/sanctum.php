@@ -50,7 +50,8 @@ return [
     |
     */
 
-    'expiration' => null,
+    // Minutes. Set SANCTUM_TOKEN_EXPIRATION in .env; empty or 0 means tokens do not expire.
+    'expiration' => ((int) env('SANCTUM_TOKEN_EXPIRATION', 0)) ?: null,
 
     /*
     |--------------------------------------------------------------------------
