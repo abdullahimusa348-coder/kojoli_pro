@@ -367,8 +367,27 @@ describe('9: phone normalization before fingerprinting', function () {
         expect(NigerianPhone::normalize('01112345678'))->toBe('01112345678'); // no prefix rule
     });
 
+    it('accepts the valid local and +234 formats, including formatted ones', function () {
+        expect(NigerianPhone::normalize('08012345678'))->toBe('08012345678')
+            ->and(NigerianPhone::normalize('+2348012345678'))->toBe('08012345678')
+            ->and(NigerianPhone::normalize('+234 701 234 5678'))->toBe('07012345678')
+            ->and(NigerianPhone::normalize('+234-(901)-234.5678'))->toBe('09012345678')
+            ->and(NigerianPhone::normalize(' 0811 234 5678 '))->toBe('08112345678');
+    });
+
+    it('rejects +234 numbers whose first digit after 234 is 0', function (string $input) {
+        expect(NigerianPhone::normalize($input))->toBeNull()
+            ->and(fn () => Purchase::fingerprint(1, $input, null))->toThrow(InvalidArgumentException::class);
+    })->with(['+2340801234567', '+234 080 123 4567', '+2340000000000', '+234-0-801234567']);
+
+    it('rejects invalid digit counts', function (string $input) {
+        expect(NigerianPhone::normalize($input))->toBeNull();
+    })->with(['0801234567', '080123456789', '+234801234567', '+23480123456789', '0', '+234']);
+
     it('gives equivalent formats the same fingerprint', function () {
         $fingerprint = Purchase::fingerprint(7, '08012345678', 10_000);
+        expect(Purchase::fingerprint(7, '+2348012345678', null))->toBe(Purchase::fingerprint(7, '08012345678', null))
+            ->and(Purchase::fingerprint(7, '+234 901 234 5678', 500))->toBe(Purchase::fingerprint(7, '0901-234-5678', 500));
 
         expect(Purchase::fingerprint(7, '+2348012345678', 10_000))->toBe($fingerprint)
             ->and(Purchase::fingerprint(7, '+234 801 234 5678', 10_000))->toBe($fingerprint)
