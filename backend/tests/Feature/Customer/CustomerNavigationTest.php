@@ -15,7 +15,7 @@ function navCustomer(array $attributes = []): User
 describe('navigation list', function () {
     it('contains only implemented customer pages', function () {
         expect(array_map(fn (CustomerNav $i) => $i->value, CustomerNav::cases()))
-            ->toBe(['dashboard', 'wallet', 'account', 'security', 'email-verification']);
+            ->toBe(['dashboard', 'wallet', 'buy', 'purchases', 'account', 'security', 'email-verification']);
     });
 
     it('points every item at a registered route', function () {

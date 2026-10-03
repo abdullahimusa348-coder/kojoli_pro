@@ -29,6 +29,17 @@ enum PurchaseStatus: string
         };
     }
 
+    /** Label shown to customers. */
+    public function customerLabel(): string
+    {
+        return match ($this) {
+            self::Pending => 'Pending',
+            self::Successful => 'Successful',
+            self::Failed => 'Failed',
+            self::Review => 'Under review',
+        };
+    }
+
     public function isFinal(): bool
     {
         return in_array($this, [self::Successful, self::Failed], true);

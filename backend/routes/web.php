@@ -27,10 +27,12 @@ use App\Http\Controllers\Auth\EmailVerificationController;
 use App\Http\Controllers\Auth\NewPasswordController;
 use App\Http\Controllers\Auth\PasswordResetLinkController;
 use App\Http\Controllers\Auth\RegisteredUserController;
+use App\Http\Controllers\User\BuyController;
 use App\Http\Controllers\User\DashboardController;
 use App\Http\Controllers\User\FundWalletController;
 use App\Http\Controllers\User\PasswordController;
 use App\Http\Controllers\User\ProfileController;
+use App\Http\Controllers\User\PurchaseController as CustomerPurchaseController;
 use App\Http\Controllers\User\SecurityController;
 use App\Http\Controllers\User\WalletController as CustomerWalletController;
 use App\Support\Admin\AdminModule;
@@ -83,6 +85,19 @@ Route::middleware(['auth:web', 'auth.session'])->group(function () {
         Route::post('/', [FundWalletController::class, 'store'])->middleware('throttle:10,1')->name('.store');
         Route::get('{reference}', [FundWalletController::class, 'show'])->where('reference', 'PAY-[0-9A-Z]{26}')
             ->middleware('throttle:30,1')->name('.show');
+    });
+
+    // Buy Data / Buy Airtime (Phase 10): only purchasable plans are offered; the purchase engine
+    // re-prices on the server and is the only debit/refund path. Customers see only their own purchases.
+    Route::middleware('verified.optional')->group(function () {
+        Route::get('buy', [BuyController::class, 'index'])->name('buy');
+        Route::get('buy/{service}', [BuyController::class, 'create'])->whereIn('service', ['data', 'airtime'])->name('buy.service');
+        Route::post('buy/{service}/confirm', [BuyController::class, 'confirm'])->whereIn('service', ['data', 'airtime'])
+            ->middleware('throttle:buy-confirm')->name('buy.confirm');
+        Route::post('buy/{service}', [BuyController::class, 'store'])->whereIn('service', ['data', 'airtime'])
+            ->middleware('throttle:buy-store')->name('buy.store');
+        Route::get('purchases', [CustomerPurchaseController::class, 'index'])->name('purchases');
+        Route::get('purchases/{reference}', [CustomerPurchaseController::class, 'show'])->where('reference', 'PUR-[0-9A-Z]{26}')->name('purchases.show');
     });
 
     Route::get('profile', [ProfileController::class, 'edit'])->name('profile.edit');

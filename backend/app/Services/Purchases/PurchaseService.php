@@ -66,9 +66,9 @@ class PurchaseService
     ) {}
 
     /** Creates (and debits) a purchase, then executes it. */
-    public function purchase(User $user, Plan $plan, string $recipient, ?int $faceValueKobo, string $idempotencyKey): Purchase
+    public function purchase(User $user, Plan $plan, string $recipient, ?int $faceValueKobo, string $idempotencyKey, ?int $confirmedAmountKobo = null): Purchase
     {
-        return $this->execute($this->create($user, $plan, $recipient, $faceValueKobo, $idempotencyKey));
+        return $this->execute($this->create($user, $plan, $recipient, $faceValueKobo, $idempotencyKey, $confirmedAmountKobo));
     }
 
     /**
@@ -76,11 +76,13 @@ class PurchaseService
      * transaction. A repeated key with the same details returns the existing
      * purchase without another debit; with different details it is refused.
      * Nothing is created or debited when the plan is not purchasable, no
-     * executable route exists, or the wallet cannot pay.
+     * executable route exists, or the wallet cannot pay. The price is always
+     * resolved here on the server; $confirmedAmountKobo (what the customer saw
+     * and confirmed) is only compared with it, and a difference is refused.
      *
      * @throws PurchaseException
      */
-    public function create(User $user, Plan $plan, string $recipient, ?int $faceValueKobo, string $idempotencyKey): Purchase
+    public function create(User $user, Plan $plan, string $recipient, ?int $faceValueKobo, string $idempotencyKey, ?int $confirmedAmountKobo = null): Purchase
     {
         $canonical = NigerianPhone::normalize($recipient) ?? throw new PurchaseException('Enter a valid Nigerian phone number.');
         $fingerprint = Purchase::fingerprint($plan->id, $canonical, $faceValueKobo);
@@ -92,6 +94,9 @@ class PurchaseService
         $quote = $this->prices->quoteFor($plan, $user, $faceValueKobo);
         if (! $quote->available) {
             throw new PurchaseException($quote->reason ?? 'This plan is not available.');
+        }
+        if ($confirmedAmountKobo !== null && $confirmedAmountKobo !== $quote->amountKobo) {
+            throw new PurchaseException('The price has changed. Please review the new price and confirm again.');
         }
         if ($this->registry->executableFor($plan) === []) {
             throw new PurchaseException('This plan is not available right now.');

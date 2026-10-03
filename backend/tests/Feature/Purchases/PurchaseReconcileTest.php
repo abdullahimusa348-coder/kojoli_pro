@@ -294,10 +294,10 @@ describe('staff re-check', function () {
             ->and($purchase->fresh()->refund_transaction_id)->toBeNull();
     });
 
-    it('offers no manual mark-successful or force-fail/refund action and no customer purchase routes', function () {
+    it('offers no manual mark-successful or force-fail/refund action and no other purchase routes', function () {
         expect(class_exists('App\\Actions\\Admin\\Purchases\\MarkPurchaseSuccessful'))->toBeFalse()
             ->and(class_exists('App\\Actions\\Admin\\Purchases\\ForceFailPurchase'))->toBeFalse()
-            ->and(collect(Route::getRoutes())->map->uri()->filter(fn ($u) => str_contains($u, 'purchase') && ! str_starts_with($u, 'admin/purchases'))->values()->all())->toBe([]);
+            ->and(collect(Route::getRoutes())->map->uri()->filter(fn ($u) => str_contains($u, 'purchase') && ! str_starts_with($u, 'admin/purchases') && ! in_array($u, ['buy', 'buy/{service}', 'buy/{service}/confirm', 'purchases', 'purchases/{reference}'], true))->values()->all())->toBe([]);
     });
 });
 

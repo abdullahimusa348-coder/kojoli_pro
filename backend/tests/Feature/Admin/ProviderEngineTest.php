@@ -887,7 +887,9 @@ describe('scope', function () {
     });
 
     it('adds no purchase, customer, mobile API, wallet or delete routes', function () {
+        // Phase 10 CP6 customer Buy Data/Airtime and My purchases routes are the only allowed exceptions.
         $public = collect(Route::getRoutes())->filter(fn ($r) => ! str_starts_with($r->uri(), 'admin')
+            && ! in_array($r->uri(), ['buy', 'buy/{service}', 'buy/{service}/confirm', 'purchases', 'purchases/{reference}'], true)
             && preg_match('/(provider|route|purchase|buy|vend|order|price)/i', $r->uri()));
         $deletes = collect(Route::getRoutes())->filter(fn ($r) => (str_starts_with($r->uri(), 'admin/providers') || str_contains($r->uri(), '/routes'))
             && in_array('DELETE', $r->methods(), true));

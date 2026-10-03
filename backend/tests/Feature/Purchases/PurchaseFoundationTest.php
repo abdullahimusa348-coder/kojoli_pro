@@ -370,9 +370,10 @@ describe('permissions', function () {
     });
 });
 
-it('adds no customer purchase routes or production adapters yet (CP6)', function () {
+it('adds only the approved purchase routes and no production adapters', function () {
     $routes = collect(Route::getRoutes())->map->uri();
 
-    expect($routes->filter(fn ($uri) => preg_match('/(buy|purchase|vend|order)/i', $uri) && ! str_starts_with($uri, 'admin/purchases'))->values()->all())->toBe([])
+    expect($routes->filter(fn ($uri) => preg_match('/(buy|purchase|vend|order)/i', $uri) && ! str_starts_with($uri, 'admin/purchases')
+        && ! in_array($uri, ['buy', 'buy/{service}', 'buy/{service}/confirm', 'purchases', 'purchases/{reference}'], true))->values()->all())->toBe([])
         ->and(config('providers.drivers'))->toBe([]); // the adapter registry (CP2) ships with no adapters
 });

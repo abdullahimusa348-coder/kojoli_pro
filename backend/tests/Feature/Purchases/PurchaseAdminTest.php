@@ -293,9 +293,10 @@ describe('staff re-check', function () {
     });
 });
 
-it('adds no customer purchase screens and no production provider', function () {
+it('adds only the approved customer purchase routes and no production provider', function () {
     $config = require base_path('config/providers.php');
 
-    expect(collect(Route::getRoutes())->map->uri()->filter(fn ($u) => preg_match('/(buy|purchase)/i', $u) && ! str_starts_with($u, 'admin/'))->values()->all())->toBe([])
+    expect(collect(Route::getRoutes())->map->uri()->filter(fn ($u) => preg_match('/(buy|purchase)/i', $u) && ! str_starts_with($u, 'admin/'))->unique()->sort()->values()->all())
+        ->toBe(['buy', 'buy/{service}', 'buy/{service}/confirm', 'purchases', 'purchases/{reference}'])
         ->and($config['drivers'])->toBe([]);
 });

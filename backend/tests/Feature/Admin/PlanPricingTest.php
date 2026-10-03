@@ -760,7 +760,9 @@ describe('scope', function () {
             expect(class_exists($class))->toBeFalse("{$class} exists");
         }
 
+        // Phase 10 CP6 customer Buy Data/Airtime and My purchases routes are the only allowed exceptions.
         $public = collect(Route::getRoutes())->filter(fn ($r) => ! str_starts_with($r->uri(), 'admin')
+            && ! in_array($r->uri(), ['buy', 'buy/{service}', 'buy/{service}/confirm', 'purchases', 'purchases/{reference}'], true)
             && preg_match('/(price|pricing|plan|purchase|buy|quote)/i', $r->uri()));
         expect($public->map->uri()->values()->all())->toBe([]);
     });
