@@ -16,6 +16,9 @@
     :focus-visible {
         @apply outline-2 outline-offset-2 outline-brand-600;
     }
+    [x-cloak] {
+        display: none !important;
+    }
 }
 
 @media (prefers-reduced-motion: reduce) {

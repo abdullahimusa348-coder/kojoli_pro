@@ -5,7 +5,7 @@ Rule: build and test everything locally first. cPanel is used only in Phase 20. 
 | # | Phase | Goal | Done when |
 |---|---|---|---|
 | 1 | Project foundation | Laravel 12 skeleton, tooling, structure, docs | App boots, tests pass, `/up` and `/api/v1/health` respond |
-| 2 | Authentication & user foundation | Breeze web auth, spatie roles/permissions, account types (API User, Affiliate, Subscriber, Vendor) | Register, login, reset work; roles seeded; auth tests pass |
+| 2 | Authentication & user foundation ✅ | Session web auth (Breeze-style, custom), spatie roles/permissions, account types (API User, Affiliate, Subscriber, Vendor), Sanctum token auth foundation | Register, login, reset work; roles seeded; auth tests pass |
 | 3 | Admin Dashboard foundation | Admin layout, navigation, settings store (config managed in DB), system users | Admin can log in and manage settings without `.env` |
 | 4 | User Dashboard foundation | Responsive user layout, profile, security settings | Mobile-first dashboard shell works |
 | 5 | Services & Categories | Admin-managed services (Data, Smile Data, NIN, BVN separate) | Services toggle on/off from admin |

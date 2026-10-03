@@ -1,9 +1,11 @@
 # PROJECT STATUS: Nadabo Global Data
 
-Last updated: 2026-10-03 · Stage: **Phase 1, foundation installed and verified**
+Last updated: 2026-10-03 · Stage: **Phase 2, authentication & user foundation complete** (awaiting approval for Phase 3)
 
 ## Current state
-Foundation installed with `scripts/bootstrap.sh` and verified on 2026-10-03: Laravel 12.69.3, PHP 8.3.6, Composer dependencies, Node 22 / npm 10 with a successful `npm run build`, migrations on MariaDB 10.11, Pest tests (4 passed), `/up` returns 200, `/api/v1/health` returns 200. The repository holds the Laravel backend in `backend/` and the Flutter app in `mobile/`.
+- Phase 1 foundation installed and verified with `scripts/bootstrap.sh`: Laravel 12.69.3, PHP 8.3.6, Node 22 / npm 10, MariaDB 10.11.
+- Phase 2 adds customer and staff authentication, user types, account status, a profile page, a user dashboard shell, an admin login, and Sanctum token authentication for the future mobile app. 46 Pest tests pass. `/up` and `/api/v1/health` return 200.
+- Repository layout: Laravel backend in `backend/`, Flutter app in `mobile/`.
 
 ## Technology stack (approved)
 | Area | Choice |
@@ -11,45 +13,71 @@ Foundation installed with `scripts/bootstrap.sh` and verified on 2026-10-03: Lar
 | Framework | Laravel 12 |
 | PHP | 8.3+ (cPanel host support to be confirmed) |
 | Database | MySQL 8 / MariaDB 10.6+ (utf8mb4) |
-| Frontend | Blade, Tailwind CSS, Alpine.js, Vite |
-| Auth (later) | Laravel Breeze (web), Laravel Sanctum (mobile API) |
-| Permissions (later) | spatie/laravel-permission |
+| Frontend | Blade, Tailwind CSS 4, Alpine.js, Vite |
+| Web auth | Custom session auth in the Breeze style (Breeze itself not installed, see decisions) |
+| API auth | Laravel Sanctum 4 personal access tokens |
+| Permissions | spatie/laravel-permission 6 |
 | Queue / cache / sessions | database drivers |
-| Testing | Pest |
+| Testing | Pest 3 |
 
 ## Existing architecture
 Action/Service layering, versioned API (`/api/v1`), thin controllers. See `docs/ARCHITECTURE.md`.
 
 ## Existing modules
-None. Infrastructure only: `GET /api/v1/health`, plus Laravel's `/up`.
+- **Infrastructure:** `GET /up`, `GET /api/v1/health`
+- **Customer auth (web):** `/register`, `/login` (email or phone), `POST /logout`, `/forgot-password`, `/reset-password/{token}`
+- **Customer area:** `/dashboard`, `/profile` (name, email, phone, password change)
+- **Admin auth:** `/admin/login`, `/admin` (placeholder page; the dashboard itself is Phase 3)
+- **API auth:** `POST /api/v1/auth/token`, `DELETE /api/v1/auth/token`, `GET /api/v1/user`
+- **Console:** `php artisan nadabo:create-admin {email} [--super]` (password typed interactively)
 
 ## Existing database structure
-None yet. After `php artisan migrate` only the Laravel defaults exist (users, sessions, cache, jobs).
+- Laravel defaults: `users`, `password_reset_tokens`, `sessions`, `cache`, `jobs`
+- `users` extra columns: `phone` (unique, nullable), `user_type` (subscriber, vendor, affiliate, api_user), `status` (active, disabled), `last_login_at`, `last_login_ip`
+- spatie permission tables: `roles`, `permissions`, `model_has_roles`, `model_has_permissions`, `role_has_permissions`
+- Sanctum: `personal_access_tokens`
+- Seeded (`php artisan db:seed`): roles `super-admin`, `admin`; permission `admin.access`. No users are seeded.
+
+## Authentication and authorization rules
+- Login by email or Nigerian phone number (stored as `0XXXXXXXXXX`; `+234…` accepted). Passwords hashed with bcrypt; minimum 8 characters, mixed case and a number.
+- 5 failed attempts per login and IP lock that pair for 60 seconds. Sign-up, reset and token endpoints are rate limited.
+- Disabled accounts cannot log in. Active sessions and API tokens of a disabled account stop working on the next request.
+- Session regenerated on login and invalidated on logout. Password change signs out other devices and revokes API tokens. Password reset revokes API tokens.
+- Forgot-password gives the same response whether or not the email exists.
+- Public sign-ups are always **Subscriber**. `user_type` and `status` are never mass assignable; only server code or an admin (Phase 3) changes them.
+- Customer tier = `users.user_type` (one per user, drives pricing later). Staff access = spatie roles and permissions. `super-admin` passes every check through `Gate::before`.
 
 ## Existing frontend structure
 - `resources/css/theme.css` (navy/blue tokens), `resources/css/app.css`, `resources/js/app.js` (Alpine)
-- `resources/views/layouts/base.blade.php`, empty `public/`, `user/`, `admin/`, `components/`
+- Layouts: `layouts/base` (root), `layouts/guest` (auth card), `layouts/app` (signed-in shell with mobile menu)
+- Components: `x-input`, `x-button`, `x-alert`
+- Views: `auth/*`, `user/dashboard`, `user/profile`, `admin/auth/login`, `admin/dashboard`
 
 ## Existing backend structure
-- `app/Actions`, `app/Services`, `app/Support` (empty)
-- `app/Http/Controllers/{Admin,User}` (empty), `Api/V1/HealthController`
-- `routes/api.php`, `routes/api/v1.php`
-- Tests: `tests/Feature/HealthCheckTest.php`, `tests/Feature/Api/V1/HealthTest.php`
+- `app/Actions/Auth/{RegisterUser, AuthenticateUser}`: shared by web, admin and API login
+- `app/Support/Enums/{UserType, UserStatus}`, `app/Support/Validation/AccountRules`
+- `app/Http/Middleware/{EnsureUserIsActive, EnsureUserCanAccessAdmin}` (aliases `active`, `admin`)
+- Controllers: `Auth/*`, `User/*`, `Admin/{DashboardController, Auth/AdminSessionController}`, `Api/V1/{HealthController, Auth/*}`
+- `app/Console/Commands/CreateAdminCommand`
+- Tests: `tests/Feature/{Auth, User, Admin, Api/V1}`, `tests/Unit/UserPhoneTest`
 
 ## Not built (by instruction)
-Business features, authentication, roles, providers/APIs, payment gateways, cPanel deployment.
+Admin dashboard (Phase 3), services, plans, providers/APIs, wallet, payment gateways, referral, KYC, business API endpoints, cPanel deployment.
 
 ## Problems / blockers
-1. Resolved: foundation installed and verified. `scripts/bootstrap.sh` was fixed to create `tests/Pest.php` itself, because Pest 3 has no `pest:install` artisan command.
-2. cPanel PHP 8.3 availability unconfirmed. Check before Phase 20, or earlier if you already have a host.
-3. Breeze will rewrite `resources/css/app.css` and may expect a particular Tailwind version. Brand tokens are in `theme.css` so they survive; re-add the `@import './theme.css'` line afterwards and verify the build.
-4. `scripts/bootstrap.sh` patches `bootstrap/app.php` to register `routes/api.php`. It stops with a clear message if the patch cannot apply.
-5. Tests use Laravel's default in-memory SQLite, so `pdo_sqlite` must be enabled locally.
+1. cPanel PHP 8.3 availability unconfirmed. Check before Phase 20, or earlier if you already have a host.
+2. Password-reset email uses `MAIL_MAILER=log` locally. Real SMTP details are needed before launch.
+3. Tests use in-memory SQLite, so `pdo_sqlite` must be enabled locally.
+
+## Decisions awaiting approval
+See the Phase 2 report: email verification, Sanctum token expiry, phone-based password reset, who may self-select Vendor/Affiliate/API User.
 
 ## Missing requirements (needed before the relevant phase)
 - Chosen hosting plan and PHP version (Phase 20)
 - Provider/API documentation for each service (Phase 7 and 10)
 - Gateway accounts and docs for Monnify and Aspfiy (Phase 9)
 - Business rules: pricing tiers, commission and referral rates, withdrawal limits and fees (Phases 6, 12, 14)
+- Rules for upgrading a customer to Vendor, Affiliate or API User (Phase 3 or 6)
 - Confirmed KYC rules per provider (Phase 13)
+- SMTP / SMS provider for account emails and OTPs
 - Logo and brand assets (Phase 3)
