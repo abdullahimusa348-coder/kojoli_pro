@@ -12,6 +12,7 @@ use App\Models\Service;
 use App\Support\Catalog\AmountType;
 use App\Support\Catalog\Network;
 use App\Support\Catalog\ValidityPeriod;
+use App\Support\Enums\SystemPermission;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -32,10 +33,16 @@ class PlanController extends Controller
             'network' => ['nullable', Rule::enum(Network::class)],
             'validity' => ['nullable', Rule::enum(ValidityPeriod::class)],
             'status' => ['nullable', 'in:active,disabled,available'],
+            'pricing' => ['nullable', 'in:missing,complete'],
         ]);
+        // Price information is only shown to (and filterable by) staff with pricing.view.
+        $pricing = $request->user('admin')->can(SystemPermission::PricingView->value);
 
         $plans = Plan::query()
             ->with('product.service.category')
+            ->when($pricing, fn ($query) => $query->withCount('activePrices'))
+            ->when($pricing && ($filters['pricing'] ?? null) === 'missing', fn ($query) => $query->has('activePrices', '<', Plan::customerTypeCount()))
+            ->when($pricing && ($filters['pricing'] ?? null) === 'complete', fn ($query) => $query->has('activePrices', '>=', Plan::customerTypeCount()))
             ->when($filters['q'] ?? null, function ($query, string $term) {
                 $like = '%'.addcslashes($term, '%_\\').'%';
                 $query->where(fn ($q) => $q->where('name', 'like', $like)->orWhere('code', 'like', $like)->orWhere('description', 'like', $like));
@@ -68,7 +75,7 @@ class PlanController extends Controller
 
     public function store(PlanRequest $request, SavePlan $save): RedirectResponse
     {
-        $plan = $save->create($request->validated(), $request->user('admin'));
+        $plan = $save->create($request->planData(), $request->user('admin'));
 
         return redirect()->route('admin.services.plans.show', $plan)->with('status', "Plan “{$plan->name}” created.");
     }
@@ -85,7 +92,7 @@ class PlanController extends Controller
 
     public function update(PlanRequest $request, Plan $plan, SavePlan $save): RedirectResponse
     {
-        $save->update($plan, $request->validated(), $request->user('admin'));
+        $save->update($plan, $request->planData(), $request->user('admin'));
 
         return redirect()->route('admin.services.plans.show', $plan)->with('status', 'Plan updated.');
     }

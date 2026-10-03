@@ -16,6 +16,7 @@ enum PermissionModule: string
     case Users = 'users';
     case Wallet = 'wallet';
     case Services = 'services';
+    case Pricing = 'pricing';
     case Providers = 'providers';
     case Payments = 'payments';
     case Transactions = 'transactions';
@@ -36,6 +37,7 @@ enum PermissionModule: string
             self::Users => 'Users (customers)',
             self::Wallet => 'Wallet',
             self::Services => 'Services',
+            self::Pricing => 'Pricing',
             self::Providers => 'Providers',
             self::Payments => 'Payments',
             self::Transactions => 'Transactions',
@@ -51,6 +53,6 @@ enum PermissionModule: string
     /** Whether the module's screens exist yet (its permissions are enforced today). */
     public function isBuilt(): bool
     {
-        return in_array($this, [self::Dashboard, self::SystemUsers, self::Roles, self::Settings, self::Users, self::Services], true);
+        return in_array($this, [self::Dashboard, self::SystemUsers, self::Roles, self::Settings, self::Users, self::Services, self::Pricing], true);
     }
 }

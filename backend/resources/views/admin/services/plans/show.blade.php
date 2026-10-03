@@ -32,6 +32,9 @@
             <div><dt class="text-navy-600">Amount type</dt><dd class="mt-0.5 font-medium text-navy-900">{{ $plan->amount_type->label() }}</dd></div>
             <div><dt class="text-navy-600">Data volume</dt><dd class="mt-0.5 font-medium text-navy-900" data-volume>{{ $plan->dataVolumeLabel() ?? '—' }}</dd></div>
             <div><dt class="text-navy-600">Validity</dt><dd class="mt-0.5 font-medium text-navy-900" data-validity>{{ $plan->validityLabel() ?? '—' }}</dd></div>
+            @if ($plan->isVariable())
+                <div><dt class="text-navy-600">Amount limits</dt><dd class="mt-0.5 font-medium text-navy-900" data-amount-limits>{{ $plan->amountLimitsLabel() ?? 'Not set' }}</dd></div>
+            @endif
             <div><dt class="text-navy-600">Display order</dt><dd class="mt-0.5 font-medium text-navy-900">{{ $plan->sort_order }}</dd></div>
             <div class="sm:col-span-2"><dt class="text-navy-600">Code</dt><dd class="mt-0.5 break-all font-mono text-navy-900">{{ $plan->code }}</dd></div>
             <div class="sm:col-span-2"><dt class="text-navy-600">Description</dt><dd class="mt-0.5 break-words text-navy-900">{{ $plan->description ?: '—' }}</dd></div>
@@ -40,4 +43,16 @@
             <p class="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">This plan is active, but its product, service or category is disabled, so it is unavailable.</p>
         @endif
     </section>
+
+    @can(\App\Support\Enums\SystemPermission::PricingView->value)
+        <section class="mt-6 max-w-3xl rounded-2xl bg-white p-5 shadow-sm ring-1 ring-navy-100 sm:p-6" data-plan-pricing>
+            <div class="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                    <h2 class="text-base font-semibold text-navy-900">Prices</h2>
+                    <p class="mt-0.5 text-sm text-navy-600">@include('admin.services.pricing.priced-badge', ['plan' => $plan]) customer types priced</p>
+                </div>
+                <a href="{{ route('admin.services.plans.prices', $plan) }}" class="rounded-lg px-3 py-1.5 text-sm font-medium text-brand-700 ring-1 ring-navy-200 hover:bg-navy-50">Manage prices</a>
+            </div>
+        </section>
+    @endcan
 @endsection

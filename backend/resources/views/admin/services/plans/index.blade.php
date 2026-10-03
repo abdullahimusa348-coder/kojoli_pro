@@ -57,6 +57,16 @@
                 <option value="disabled" @selected(($filters['status'] ?? '') === 'disabled')>Disabled</option>
             </select>
         </div>
+        @can(\App\Support\Enums\SystemPermission::PricingView->value)
+            <div class="lg:col-span-3 xl:col-span-1">
+                <label for="pricing" class="mb-1 block text-xs font-medium text-navy-700">Prices</label>
+                <select id="pricing" name="pricing" class="{{ $control }}">
+                    <option value="">All plans</option>
+                    <option value="missing" @selected(($filters['pricing'] ?? '') === 'missing')>Missing prices</option>
+                    <option value="complete" @selected(($filters['pricing'] ?? '') === 'complete')>Fully priced</option>
+                </select>
+            </div>
+        @endcan
         <div class="flex gap-2 sm:col-span-2 sm:justify-end lg:col-span-6">
             <a href="{{ route('admin.services.plans') }}" class="inline-flex items-center rounded-lg px-4 py-2 text-sm font-medium text-navy-700 hover:bg-navy-50">Reset</a>
             <button type="submit" class="inline-flex items-center rounded-lg bg-navy-900 px-4 py-2 text-sm font-semibold text-white hover:bg-navy-800">Apply</button>
@@ -82,6 +92,9 @@
                                 · {{ $plan->amount_type->label() }}
                             </p>
                         </div>
+                        @can(\App\Support\Enums\SystemPermission::PricingView->value)
+                            <div class="md:w-24"><a href="{{ route('admin.services.plans.prices', $plan) }}" class="text-xs hover:underline">@include('admin.services.pricing.priced-badge', ['plan' => $plan])</a></div>
+                        @endcan
                         <div class="md:w-52">@include('admin.services.partials.status', ['label' => $plan->statusLabel()])</div>
                         <div class="flex flex-wrap gap-2 md:w-40 md:justify-end">
                             @can(\App\Support\Enums\SystemPermission::ServicesUpdate->value)

@@ -532,7 +532,7 @@ describe('scope', function () {
         foreach (['/admin/services', "/admin/services/{$service->id}", '/admin/services/categories'] as $url) {
             $html = mb_strtolower($this->get($url)->getContent());
             foreach (['₦', 'price', 'balance', 'buy now', 'purchase now', 'checkout', 'provider:'] as $word) {
-                expect($html)->not->toContain($word, "{$url} contains {$word}");
+                expect(str_contains($html, $word))->toBeFalse("{$url} contains {$word}");
             }
         }
     });

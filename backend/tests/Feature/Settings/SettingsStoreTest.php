@@ -29,11 +29,13 @@ it('seeds the safe defaults with the right types', function () {
         'app.maintenance_mode' => false,
         'app.name' => 'Nadabo Global Data',
         'app.timezone' => 'Africa/Lagos',
+        'pricing.max_amount_kobo' => 1000000000,
     ]);
 
     expect(Setting::firstWhere('key', 'app.maintenance_mode')->type)->toBe(SettingType::Boolean)
         ->and(Setting::where('is_encrypted', true)->count())->toBe(0)
-        ->and(Setting::pluck('group')->unique()->values()->all())->toBe(['app']);
+        ->and(Setting::firstWhere('key', 'pricing.max_amount_kobo')->type)->toBe(SettingType::Integer)
+        ->and(Setting::pluck('group')->unique()->sort()->values()->all())->toBe(['app', 'pricing']);
 });
 
 it('does not overwrite values changed by staff when re-seeded', function () {
@@ -42,7 +44,7 @@ it('does not overwrite values changed by staff when re-seeded', function () {
 
     $this->seed(SettingsSeeder::class);
 
-    expect(store()->get('app.name'))->toBe('Nadabo Data')->and(Setting::count())->toBe(5);
+    expect(store()->get('app.name'))->toBe('Nadabo Data')->and(Setting::count())->toBe(6);
 });
 
 it('gets, sets, checks and forgets values', function () {

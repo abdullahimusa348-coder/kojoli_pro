@@ -1,4 +1,4 @@
-{{-- Plan fields (no price, cost or provider fields). $plan: existing or null. Code locked after creation. --}}
+{{-- Plan fields (no price, cost or provider fields; prices are managed on the plan's Prices page). $plan: existing or null. Code locked after creation. --}}
 @php($selectClass = 'block w-full rounded-lg border border-navy-200 px-3 py-2 text-navy-900 shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-200')
 
 <div class="mb-4">
@@ -35,6 +35,14 @@
         @error('amount_type')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
     </div>
     <x-input name="data_volume_mb" label="Data volume in MB (optional)" type="number" :value="$plan?->data_volume_mb" min="1" placeholder="e.g. 1024" />
+</div>
+
+<div class="mb-4" data-amount-limits>
+    <div class="grid gap-4 sm:grid-cols-2">
+        <x-input name="min_amount" label="Minimum amount in ₦ (variable plans)" inputmode="decimal" :value="\App\Support\Pricing\KoboAmount::toInput($plan?->min_amount_kobo)" placeholder="e.g. 50" autocomplete="off" />
+        <x-input name="max_amount" label="Maximum amount in ₦ (variable plans)" inputmode="decimal" :value="\App\Support\Pricing\KoboAmount::toInput($plan?->max_amount_kobo)" placeholder="e.g. 50,000" autocomplete="off" />
+    </div>
+    <p class="-mt-2 text-xs text-navy-600">Face-value range the customer may enter on a variable-amount plan; it is a limit, not what the customer is charged. Leave empty for fixed plans.</p>
 </div>
 
 <div class="mb-4 grid gap-4 sm:grid-cols-2">

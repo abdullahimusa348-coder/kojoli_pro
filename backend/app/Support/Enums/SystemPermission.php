@@ -49,6 +49,10 @@ enum SystemPermission: string
     case ServicesUpdate = 'services.update';
     case ServicesDelete = 'services.delete';
 
+    // Pricing (customer selling prices for catalog plans)
+    case PricingView = 'pricing.view';
+    case PricingUpdate = 'pricing.update';
+
     // Providers
     case ProvidersView = 'providers.view';
     case ProvidersCreate = 'providers.create';
@@ -97,6 +101,7 @@ enum SystemPermission: string
             self::CustomersUpdate, self::CustomersResetPassword => PermissionModule::Users,
             self::WalletView, self::WalletManage => PermissionModule::Wallet,
             self::ServicesView, self::ServicesCreate, self::ServicesUpdate, self::ServicesDelete => PermissionModule::Services,
+            self::PricingView, self::PricingUpdate => PermissionModule::Pricing,
             self::ProvidersView, self::ProvidersCreate, self::ProvidersUpdate, self::ProvidersDelete => PermissionModule::Providers,
             self::PaymentsView, self::PaymentsManage => PermissionModule::Payments,
             self::TransactionsView, self::TransactionsManage => PermissionModule::Transactions,

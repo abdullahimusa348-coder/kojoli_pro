@@ -51,6 +51,8 @@ class SavePlan
             'validity_period' => $data['validity_period'] ?? null,
             'validity_days' => isset($data['validity_days']) ? (int) $data['validity_days'] : null,
             'data_volume_mb' => isset($data['data_volume_mb']) ? (int) $data['data_volume_mb'] : null,
+            'min_amount_kobo' => isset($data['min_amount_kobo']) ? (int) $data['min_amount_kobo'] : null,
+            'max_amount_kobo' => isset($data['max_amount_kobo']) ? (int) $data['max_amount_kobo'] : null,
             'description' => $data['description'] ?? null,
             'sort_order' => (int) ($data['sort_order'] ?? 0),
         ];

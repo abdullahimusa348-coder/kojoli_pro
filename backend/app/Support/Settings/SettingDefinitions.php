@@ -14,6 +14,7 @@ class SettingDefinitions
     /** Display names for setting groups. */
     public const GROUPS = [
         'app' => 'General',
+        'pricing' => 'Pricing',
     ];
 
     /**
@@ -60,6 +61,14 @@ class SettingDefinitions
                 'label' => 'Maintenance mode',
                 'description' => 'Stored flag for taking customer services offline. Not enforced yet: it takes effect when services are built.',
                 'is_public' => true,
+            ],
+            'pricing.max_amount_kobo' => [
+                'type' => SettingType::Integer,
+                'value' => 1_000_000_000,
+                'label' => 'Maximum amount (kobo)',
+                'description' => 'System safety limit for any price, fee or face-value limit, in kobo (100 kobo = ₦1). The default 1,000,000,000 kobo (₦10,000,000) is only a safeguard, not a business price.',
+                'is_public' => false,
+                'rules' => ['min:100', 'max:100000000000000'],
             ],
         ];
     }

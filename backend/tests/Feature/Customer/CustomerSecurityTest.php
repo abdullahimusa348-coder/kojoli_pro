@@ -95,7 +95,7 @@ describe('page', function () {
         $html = mb_strtolower($this->actingAs(securityCustomer())->get('/security')->getContent());
 
         foreach (['wallet', 'airtime', 'transaction', 'referral', 'withdraw', 'payment', 'two-factor', '2fa', 'api key', 'create token', 'delete account', 'coming soon'] as $word) {
-            expect($html)->not->toContain($word, "found \"{$word}\"");
+            expect(str_contains($html, $word))->toBeFalse("found \"{$word}\"");
         }
     });
 });

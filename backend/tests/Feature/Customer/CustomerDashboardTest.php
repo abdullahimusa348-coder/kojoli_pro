@@ -161,7 +161,7 @@ it('shows no money, wallet, transaction, service or future-module content', func
 
     foreach (['₦', 'ngn', 'naira', 'wallet', 'balance', 'fund', 'transaction', 'airtime', 'data plan', 'buy data',
         'cable', 'electricity', 'bill', 'referral', 'commission', 'withdraw', 'payment', 'provider', 'service', 'coming soon'] as $word) {
-        expect($html)->not->toContain($word, "found \"{$word}\"");
+        expect(str_contains($html, $word))->toBeFalse("found \"{$word}\"");
     }
 });
 

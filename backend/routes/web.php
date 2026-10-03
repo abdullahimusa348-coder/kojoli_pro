@@ -5,6 +5,7 @@ use App\Http\Controllers\Admin\CustomerController;
 use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
 use App\Http\Controllers\Admin\ModulePlaceholderController;
 use App\Http\Controllers\Admin\PlanController;
+use App\Http\Controllers\Admin\PlanPriceController;
 use App\Http\Controllers\Admin\ProductController;
 use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\ServiceCategoryController;
@@ -22,6 +23,7 @@ use App\Http\Controllers\User\ProfileController;
 use App\Http\Controllers\User\SecurityController;
 use App\Support\Admin\AdminModule;
 use App\Support\Enums\SystemPermission;
+use App\Support\Enums\UserType;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -148,8 +150,8 @@ Route::prefix('admin')->name('admin.')->group(function () {
                     ->name('.password-reset');
             });
 
-        // Service catalog: categories, services, products and plans (structure only;
-        // services.* covers all four). No delete routes.
+        // Service catalog: categories, services, products and plans (services.* covers
+        // all four) plus plan prices (pricing.*). No delete routes.
         Route::middleware([SystemPermission::AdminAccess->middleware(), SystemPermission::ServicesView->middleware()])
             ->prefix('services')->name('services')->group(function () {
                 // Categories tab (registered before {service} routes)
@@ -178,6 +180,15 @@ Route::prefix('admin')->name('admin.')->group(function () {
                 Route::get('plans/{plan}/edit', [PlanController::class, 'edit'])->whereNumber('plan')->middleware(SystemPermission::ServicesUpdate->middleware())->name('.plans.edit');
                 Route::put('plans/{plan}', [PlanController::class, 'update'])->whereNumber('plan')->middleware(SystemPermission::ServicesUpdate->middleware())->name('.plans.update');
                 Route::patch('plans/{plan}/status', [PlanController::class, 'updateStatus'])->whereNumber('plan')->middleware(SystemPermission::ServicesUpdate->middleware())->name('.plans.status');
+
+                // Plan prices (customer selling prices): services.view + pricing.view; changes need pricing.update. No delete.
+                Route::middleware(SystemPermission::PricingView->middleware())->group(function () {
+                    Route::get('plans/{plan}/prices', [PlanPriceController::class, 'show'])->whereNumber('plan')->name('.plans.prices');
+                    Route::get('plans/{plan}/prices/edit', [PlanPriceController::class, 'edit'])->whereNumber('plan')->middleware(SystemPermission::PricingUpdate->middleware())->name('.plans.prices.edit');
+                    Route::put('plans/{plan}/prices', [PlanPriceController::class, 'update'])->whereNumber('plan')->middleware(SystemPermission::PricingUpdate->middleware())->name('.plans.prices.update');
+                    Route::patch('plans/{plan}/prices/{userType}/status', [PlanPriceController::class, 'updateStatus'])->whereNumber('plan')->whereIn('userType', UserType::values())
+                        ->middleware(SystemPermission::PricingUpdate->middleware())->name('.plans.prices.status');
+                });
 
                 // Services tab
                 Route::get('/', [ServiceController::class, 'index']);

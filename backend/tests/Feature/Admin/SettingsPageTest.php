@@ -24,6 +24,7 @@ function validSettings(array $overrides = []): array
         'app__currency_symbol' => '₦',
         'app__timezone' => 'Africa/Lagos',
         'app__maintenance_mode' => '0',
+        'pricing__max_amount_kobo' => '1000000000',
     ], $overrides)];
 }
 
@@ -126,7 +127,7 @@ it('ignores unknown keys instead of creating settings', function () {
         ->assertSessionHasNoErrors();
 
     expect(Setting::where('key', 'payments.secret_key')->exists())->toBeFalse()
-        ->and(Setting::count())->toBe(5);
+        ->and(Setting::count())->toBe(6);
 });
 
 it('never shows encrypted values and keeps them when left blank', function () {

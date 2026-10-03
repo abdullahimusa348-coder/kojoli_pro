@@ -71,8 +71,9 @@ describe('schema', function () {
             }
         }
 
+        // Customer selling prices live in their own plan_prices table (Phase 6), never on products or plans.
         expect(Schema::hasTable('providers'))->toBeFalse()->and(Schema::hasTable('provider_routes'))->toBeFalse()
-            ->and(Schema::hasTable('plan_prices'))->toBeFalse()->and(Schema::hasTable('orders'))->toBeFalse()
+            ->and(Schema::hasTable('orders'))->toBeFalse()
             ->and(Schema::hasTable('transactions'))->toBeFalse()->and(Schema::hasTable('wallets'))->toBeFalse();
     });
 
@@ -471,15 +472,18 @@ describe('services integration', function () {
         }
     });
 
-    it('shows no prices, balances, providers or purchase actions', function () {
+    it('shows no prices, balances, providers or purchase actions to catalog-only staff', function () {
+        // Prices (Phase 6) are visible only with pricing.view; services.* alone shows the structure only.
         $plan = ppPlan(['data_volume_mb' => 1024]);
-        $this->actingAs(ppStaff(), 'admin');
+        $this->actingAs(ppRole(['services.view', 'services.create', 'services.update']), 'admin');
 
         foreach (['/admin/services/products', "/admin/services/products/{$plan->product_id}", '/admin/services/products/create',
             '/admin/services/plans', "/admin/services/plans/{$plan->id}", '/admin/services/plans/create', "/admin/services/plans/{$plan->id}/edit"] as $url) {
             $html = mb_strtolower($this->get($url)->getContent());
-            foreach (['₦', 'price', 'balance', 'buy now', 'purchase now', 'checkout', 'provider:', 'name="cost', 'name="amount"'] as $word) {
-                expect($html)->not->toContain($word, "{$url} contains {$word}");
+            // Plan forms carry ₦ face-value limit fields (variable plans, Phase 6); those are limits, not prices.
+            $words = ['price', 'balance', 'buy now', 'purchase now', 'checkout', 'provider:', 'name="cost', 'name="amount"'];
+            foreach (str_contains($url, 'plans/create') || str_ends_with($url, '/edit') ? $words : ['₦', ...$words] as $word) {
+                expect(str_contains($html, $word))->toBeFalse("{$url} contains {$word}");
             }
         }
     });

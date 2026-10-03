@@ -97,7 +97,7 @@ describe('layout', function () {
         $html = mb_strtolower($this->actingAs(navCustomer())->get('/dashboard')->getContent());
 
         foreach (['wallet', 'airtime', 'cable', 'electricity', 'transaction', 'referral', 'withdraw', 'payment', 'support', 'notification', 'coming soon', 'data plan', '/services'] as $word) {
-            expect($html)->not->toContain($word, "found \"{$word}\"");
+            expect(str_contains($html, $word))->toBeFalse("found \"{$word}\"");
         }
     });
 
