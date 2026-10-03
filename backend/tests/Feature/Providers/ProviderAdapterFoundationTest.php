@@ -398,8 +398,7 @@ describe('ProviderHttpClient', function () {
     });
 });
 
-it('adds no real provider adapter, provider credentials or purchase execution', function () {
+it('adds no real provider adapter or provider credentials', function () {
     expect(collect(File::allFiles(app_path()))->map->getFilename()->filter(fn ($f) => preg_match('/(ratel|bangansuba|monnify|aspfiy|paymentpoint)/i', $f))->values()->all())->toBe([])
-        ->and(class_exists('App\\Services\\Purchases\\PurchaseService'))->toBeFalse()
         ->and(ProviderCredential::count())->toBe(0);
 });

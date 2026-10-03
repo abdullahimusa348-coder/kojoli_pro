@@ -370,10 +370,10 @@ describe('permissions', function () {
     });
 });
 
-it('adds no purchase engine, provider execution, customer purchase routes or adapters yet', function () {
+it('adds no customer purchase routes, re-check command or production adapters yet (CP4-CP6)', function () {
     $routes = collect(Route::getRoutes())->map->uri();
 
     expect($routes->filter(fn ($uri) => preg_match('/(buy|purchase|vend|order)/i', $uri) && $uri !== 'admin/purchases')->values()->all())->toBe([])
-        ->and(class_exists('App\\Services\\Purchases\\PurchaseService'))->toBeFalse()
+        ->and(array_key_exists('purchases:reconcile', Artisan::all()))->toBeFalse()
         ->and(config('providers.drivers'))->toBe([]); // the adapter registry (CP2) ships with no adapters
 });

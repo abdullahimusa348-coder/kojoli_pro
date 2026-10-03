@@ -30,6 +30,9 @@ class FakeProvider implements ProviderAdapter
 
     public static bool $queryable = true;
 
+    /** Milliseconds each purchase call takes (lets concurrency tests overlap). */
+    public static int $delayMs = 0;
+
     /** @var list<ProviderPurchaseRequest|ProviderQueryRequest> */
     public static array $calls = [];
 
@@ -39,6 +42,7 @@ class FakeProvider implements ProviderAdapter
         self::$queryScript = [];
         self::$services = ['data', 'airtime'];
         self::$queryable = true;
+        self::$delayMs = 0;
         self::$calls = [];
     }
 
@@ -85,6 +89,9 @@ class FakeProvider implements ProviderAdapter
     public function purchase(ProviderPurchaseRequest $request, ProviderContext $context): ProviderResult
     {
         self::$calls[] = $request;
+        if (self::$delayMs > 0) {
+            usleep(self::$delayMs * 1000);
+        }
 
         return self::answer(array_shift(self::$purchaseScript) ?? 'unknown', 'FP-'.$request->requestReference);
     }
