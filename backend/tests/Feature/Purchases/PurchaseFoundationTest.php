@@ -334,7 +334,7 @@ describe('permissions', function () {
     it('adds purchases.view and purchases.manage to the Purchases module, Super Admin only by default', function () {
         expect(SystemPermission::PurchasesView->module())->toBe(PermissionModule::Purchases)
             ->and(SystemPermission::PurchasesManage->module())->toBe(PermissionModule::Purchases)
-            ->and(PermissionModule::Purchases->isBuilt())->toBeFalse();
+            ->and(PermissionModule::Purchases->isBuilt())->toBeTrue();
 
         foreach (SystemRole::cases() as $role) {
             $staff = SystemUser::factory()->create();
@@ -356,12 +356,12 @@ describe('permissions', function () {
             ->and(Role::findByName('manager', 'admin')->hasPermissionTo('purchases.view'))->toBeFalse();
     });
 
-    it('shows the Purchases module under Operations as a placeholder until it is built', function () {
+    it('shows the Purchases module under Operations (built in CP5)', function () {
         $staff = SystemUser::factory()->create();
         $staff->assignRole(SystemRole::SuperAdmin->value);
 
         $this->actingAs($staff, 'admin')->get('/admin/purchases')->assertOk()
-            ->assertSee('data-placeholder="purchases"', false)->assertSee('Phase 10');
+            ->assertDontSee('is not built yet')->assertSee('data-purchase-filters', false);
         $this->get('/admin')->assertSee('data-nav="purchases"', false);
 
         $manager = SystemUser::factory()->create();
@@ -370,9 +370,9 @@ describe('permissions', function () {
     });
 });
 
-it('adds no customer or admin purchase routes or production adapters yet (CP5-CP6)', function () {
+it('adds no customer purchase routes or production adapters yet (CP6)', function () {
     $routes = collect(Route::getRoutes())->map->uri();
 
-    expect($routes->filter(fn ($uri) => preg_match('/(buy|purchase|vend|order)/i', $uri) && $uri !== 'admin/purchases')->values()->all())->toBe([])
+    expect($routes->filter(fn ($uri) => preg_match('/(buy|purchase|vend|order)/i', $uri) && ! str_starts_with($uri, 'admin/purchases'))->values()->all())->toBe([])
         ->and(config('providers.drivers'))->toBe([]); // the adapter registry (CP2) ships with no adapters
 });

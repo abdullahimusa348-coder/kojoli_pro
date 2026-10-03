@@ -81,8 +81,7 @@ enum AdminModule: string
     {
         return match ($this) {
             self::Dashboard, self::Settings, self::SystemUsers, self::Roles, self::Users, self::Services, self::Providers,
-            self::Transactions, self::Wallet, self::Payments => null,
-            self::Purchases => 10,
+            self::Transactions, self::Wallet, self::Payments, self::Purchases => null,
             self::Referrals => 12,
             self::Withdrawals => 14,
             self::Notifications, self::Support => 15,

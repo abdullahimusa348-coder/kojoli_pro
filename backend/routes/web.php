@@ -14,6 +14,7 @@ use App\Http\Controllers\Admin\ProviderBulkRouteController;
 use App\Http\Controllers\Admin\ProviderController;
 use App\Http\Controllers\Admin\ProviderCredentialController;
 use App\Http\Controllers\Admin\ProviderServiceController;
+use App\Http\Controllers\Admin\PurchaseController;
 use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\ServiceCategoryController;
 use App\Http\Controllers\Admin\ServiceController;
@@ -299,6 +300,16 @@ Route::prefix('admin')->name('admin.')->group(function () {
                     Route::post('{payment}/recheck', [PaymentController::class, 'recheck'])->whereNumber('payment')->name('.recheck');
                     Route::post('{payment}/close-review', [PaymentController::class, 'closeReview'])->whereNumber('payment')->name('.close-review');
                 });
+            });
+
+        // Purchases (Phase 10): purchases.view; re-check with the provider needs purchases.manage
+        // (also re-checked inside the action). No mark-successful, force-fail/refund, edit or delete routes.
+        Route::middleware([SystemPermission::AdminAccess->middleware(), SystemPermission::PurchasesView->middleware()])
+            ->prefix('purchases')->name('purchases')->group(function () {
+                Route::get('/', [PurchaseController::class, 'index']);
+                Route::get('{purchase}', [PurchaseController::class, 'show'])->whereNumber('purchase')->name('.show');
+                Route::post('{purchase}/recheck', [PurchaseController::class, 'recheck'])->whereNumber('purchase')
+                    ->middleware([SystemPermission::PurchasesManage->middleware(), 'throttle:30,1'])->name('.recheck');
             });
 
         // Customer transactions (read-only in Phase 8): transactions.view.
