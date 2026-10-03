@@ -77,8 +77,7 @@ enum AdminModule: string
     public function plannedPhase(): ?int
     {
         return match ($this) {
-            self::Dashboard, self::Settings, self::SystemUsers, self::Roles => null,
-            self::Users => 3,
+            self::Dashboard, self::Settings, self::SystemUsers, self::Roles, self::Users => null,
             self::Services => 5,
             self::Providers => 7,
             self::Transactions, self::Wallet => 8,

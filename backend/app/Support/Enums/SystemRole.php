@@ -41,6 +41,8 @@ enum SystemRole: string
                 SystemPermission::CustomersView->value,
                 SystemPermission::CustomersUpdateStatus->value,
                 SystemPermission::CustomersChangeType->value,
+                SystemPermission::CustomersUpdate->value,
+                SystemPermission::CustomersResetPassword->value,
             ],
             self::Support => [
                 SystemPermission::AdminAccess->value,

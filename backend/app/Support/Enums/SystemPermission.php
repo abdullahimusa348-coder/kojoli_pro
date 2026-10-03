@@ -36,6 +36,8 @@ enum SystemPermission: string
     case CustomersView = 'customers.view';
     case CustomersUpdateStatus = 'customers.update-status';
     case CustomersChangeType = 'customers.change-type';
+    case CustomersUpdate = 'customers.update';
+    case CustomersResetPassword = 'customers.reset-password';
 
     // Wallet
     case WalletView = 'wallet.view';
@@ -91,7 +93,8 @@ enum SystemPermission: string
             self::SystemUsersManage => PermissionModule::SystemUsers,
             self::RolesView, self::RolesCreate, self::RolesUpdate, self::RolesDelete => PermissionModule::Roles,
             self::SettingsView, self::SettingsUpdate => PermissionModule::Settings,
-            self::CustomersView, self::CustomersUpdateStatus, self::CustomersChangeType => PermissionModule::Users,
+            self::CustomersView, self::CustomersUpdateStatus, self::CustomersChangeType,
+            self::CustomersUpdate, self::CustomersResetPassword => PermissionModule::Users,
             self::WalletView, self::WalletManage => PermissionModule::Wallet,
             self::ServicesView, self::ServicesCreate, self::ServicesUpdate, self::ServicesDelete => PermissionModule::Services,
             self::ProvidersView, self::ProvidersCreate, self::ProvidersUpdate, self::ProvidersDelete => PermissionModule::Providers,
@@ -114,6 +117,8 @@ enum SystemPermission: string
             self::SystemUsersManage => 'Manage staff accounts',
             self::CustomersUpdateStatus => 'Enable / disable customers',
             self::CustomersChangeType => 'Change customer type',
+            self::CustomersUpdate => 'Edit customer details',
+            self::CustomersResetPassword => 'Send password reset',
             self::WithdrawalsManage => 'Approve / manage',
             self::ReportsExport => 'Export',
             default => match (substr($this->value, strrpos($this->value, '.') + 1)) {

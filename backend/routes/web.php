@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\Auth\AdminSessionController;
+use App\Http\Controllers\Admin\CustomerController;
 use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
 use App\Http\Controllers\Admin\ModulePlaceholderController;
 use App\Http\Controllers\Admin\RoleController;
@@ -112,6 +113,20 @@ Route::prefix('admin')->name('admin.')->group(function () {
             Route::put('{adminRole}', [RoleController::class, 'update'])->middleware(SystemPermission::RolesUpdate->middleware())->name('.update');
             Route::delete('{adminRole}', [RoleController::class, 'destroy'])->middleware(SystemPermission::RolesDelete->middleware())->name('.destroy');
         });
+
+        // Users (customer accounts). No delete route: customers are disabled, never deleted.
+        Route::middleware([SystemPermission::AdminAccess->middleware(), SystemPermission::CustomersView->middleware()])
+            ->prefix('users')->name('users')->group(function () {
+                Route::get('/', [CustomerController::class, 'index']);
+                Route::get('{customer}', [CustomerController::class, 'show'])->name('.show');
+                Route::get('{customer}/edit', [CustomerController::class, 'edit'])->middleware(SystemPermission::CustomersUpdate->middleware())->name('.edit');
+                Route::put('{customer}', [CustomerController::class, 'update'])->middleware(SystemPermission::CustomersUpdate->middleware())->name('.update');
+                Route::patch('{customer}/status', [CustomerController::class, 'updateStatus'])->middleware(SystemPermission::CustomersUpdateStatus->middleware())->name('.status');
+                Route::patch('{customer}/type', [CustomerController::class, 'updateType'])->middleware(SystemPermission::CustomersChangeType->middleware())->name('.type');
+                Route::post('{customer}/password-reset', [CustomerController::class, 'sendPasswordReset'])
+                    ->middleware([SystemPermission::CustomersResetPassword->middleware(), 'throttle:10,1'])
+                    ->name('.password-reset');
+            });
 
         // Modules not built yet: navigation placeholders only, no business logic.
         foreach (AdminModule::cases() as $module) {
