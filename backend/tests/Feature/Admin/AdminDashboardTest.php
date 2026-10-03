@@ -137,6 +137,6 @@ it('leaves the customer dashboard unchanged', function () {
     $this->actingAs(User::factory()->create(['name' => 'Ada Obi']), 'web')
         ->get('/dashboard')
         ->assertOk()
-        ->assertSee('Welcome, Ada Obi')
+        ->assertSee('Welcome back')->assertSee('Ada Obi')
         ->assertDontSee('data-nav=', false);
 });

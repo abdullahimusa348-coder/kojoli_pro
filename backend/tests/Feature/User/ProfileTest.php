@@ -5,7 +5,7 @@ use App\Models\User;
 it('shows the dashboard and profile to a signed-in user', function () {
     $user = User::factory()->create(['name' => 'Ada Obi']);
 
-    $this->actingAs($user)->get('/dashboard')->assertOk()->assertSee('Welcome, Ada Obi')->assertSee('Subscriber');
+    $this->actingAs($user)->get('/dashboard')->assertOk()->assertSee('Welcome back')->assertSee('Ada Obi')->assertSee('Subscriber');
     $this->actingAs($user)->get('/profile')->assertOk()->assertSee('Account details');
 });
 
