@@ -394,12 +394,14 @@ describe('customer wallet', function () {
         $this->get("/admin/wallet/{$ada->id}")->assertRedirect(route('admin.login'));
     });
 
-    it('offers no deposit, withdrawal, purchase or transfer actions', function () {
+    it('offers no withdrawal, purchase or transfer actions (and no funding without a usable gateway)', function () {
+        // Wallet funding through a gateway exists since Phase 9 (tests/Feature/Payments); it is
+        // only offered while a configured gateway is active, so none shows here.
         $customer = waCustomer();
         waFund($customer, 1_000);
 
         $html = mb_strtolower($this->actingAs($customer)->get('/wallet')->getContent());
-        foreach (['deposit', 'withdraw', 'fund wallet', 'top up', 'transfer', 'buy ', 'purchase', 'coming soon', 'action="'.route('wallet')] as $word) {
+        foreach (['deposit', 'withdraw', 'fund wallet', 'data-fund-wallet', 'top up', 'transfer', 'buy ', 'purchase', 'coming soon', 'action="'.route('wallet')] as $word) {
             expect(str_contains($html, $word))->toBeFalse("found \"{$word}\"");
         }
         expect(collect(Route::getRoutes())->filter(fn ($r) => $r->uri() === 'wallet' && $r->methods() !== ['GET', 'HEAD'])->all())->toBe([]);

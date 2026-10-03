@@ -25,6 +25,10 @@ function validSettings(array $overrides = []): array
         'app__timezone' => 'Africa/Lagos',
         'app__maintenance_mode' => '0',
         'pricing__max_amount_kobo' => '1000000000',
+        'payments__min_funding_kobo' => '10000',
+        'payments__max_funding_kobo' => '50000000',
+        'payments__pending_expiry_minutes' => '60',
+        'payments__live_enabled' => '0',
     ], $overrides)];
 }
 
@@ -127,7 +131,7 @@ it('ignores unknown keys instead of creating settings', function () {
         ->assertSessionHasNoErrors();
 
     expect(Setting::where('key', 'payments.secret_key')->exists())->toBeFalse()
-        ->and(Setting::count())->toBe(6);
+        ->and(Setting::count())->toBe(10);
 });
 
 it('never shows encrypted values and keeps them when left blank', function () {

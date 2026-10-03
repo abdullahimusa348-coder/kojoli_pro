@@ -52,7 +52,7 @@ enum CustomerNav: string
     {
         return match ($this) {
             self::Dashboard => request()->routeIs('dashboard'),
-            self::Wallet => request()->routeIs('wallet'),
+            self::Wallet => request()->routeIs('wallet', 'wallet.*'),
             self::Account => request()->routeIs('profile.*'),
             self::Security => request()->routeIs('security'),
             self::EmailVerification => request()->routeIs('verification.*'),

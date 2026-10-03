@@ -752,8 +752,8 @@ describe('scope', function () {
 
     it('adds no wallet, purchase or customer-facing pricing code', function () {
         // Providers exist since Phase 7 (configuration only, in their own tables); provider cost never lives in pricing.
-        // Wallets and transactions exist since Phase 8 (in their own tables); purchases and payments do not.
-        foreach (['provider_routes', 'orders', 'payments', 'commissions', 'cashbacks'] as $table) {
+        // Wallets and transactions exist since Phase 8 and payments since Phase 9 (in their own tables); purchases do not.
+        foreach (['provider_routes', 'orders', 'commissions', 'cashbacks'] as $table) {
             expect(Schema::hasTable($table))->toBeFalse("{$table} exists");
         }
         foreach (['App\\Models\\Order', 'App\\Services\\Pricing\\ProviderCost'] as $class) {

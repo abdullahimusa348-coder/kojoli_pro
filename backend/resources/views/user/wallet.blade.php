@@ -3,9 +3,17 @@
 @section('title', 'Wallet · Nadabo Global Data')
 
 @section('page')
-    <section aria-labelledby="wallet-heading">
-        <h1 id="wallet-heading" class="text-2xl font-semibold text-navy-900 sm:text-3xl">Wallet</h1>
-        <p class="mt-1 text-sm text-navy-600">Your main wallet balance and history.</p>
+    <section class="flex flex-wrap items-end justify-between gap-3" aria-labelledby="wallet-heading">
+        <div>
+            <h1 id="wallet-heading" class="text-2xl font-semibold text-navy-900 sm:text-3xl">Wallet</h1>
+            <p class="mt-1 text-sm text-navy-600">Your main wallet balance and history.</p>
+        </div>
+        <div class="flex flex-wrap gap-2">
+            <a href="{{ route('wallet.fund') }}" class="inline-flex items-center rounded-lg px-4 py-2 text-sm font-medium text-navy-800 ring-1 ring-navy-200 hover:bg-navy-50" data-payment-history-link>Payment history</a>
+            @if ($canFund)
+                <a href="{{ route('wallet.fund') }}" class="inline-flex items-center rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700" data-fund-wallet>Fund wallet</a>
+            @endif
+        </div>
     </section>
 
     <section class="mt-6 grid gap-4 rounded-2xl bg-navy-900 p-5 text-white shadow-sm sm:grid-cols-2 sm:p-6" aria-label="Balances" data-wallet-balances>

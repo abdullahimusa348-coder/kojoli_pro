@@ -3,9 +3,11 @@
 namespace App\Http\Requests\Admin;
 
 use App\Models\Setting;
+use App\Services\Settings\SettingsStore;
 use App\Support\Settings\SettingDefinitions;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Collection;
+use Illuminate\Validation\Validator;
 
 /**
  * Validates the admin settings form. Fields are posted as settings[<field>],
@@ -47,6 +49,33 @@ class UpdateSettingsRequest extends FormRequest
         }
 
         return $rules;
+    }
+
+    /**
+     * Cross-field limits, checked against the values being saved (or the
+     * current ones): minimum funding <= maximum funding <= pricing maximum.
+     *
+     * @return list<callable>
+     */
+    public function after(): array
+    {
+        return [function (Validator $validator) {
+            if ($validator->errors()->isNotEmpty()) {
+                return;
+            }
+            $input = (array) $this->input('settings', []);
+            $value = fn (string $key) => (int) ($input[self::field($key)]
+                ?? app(SettingsStore::class)->get($key, SettingDefinitions::all()[$key]['value']));
+
+            $min = $value('payments.min_funding_kobo');
+            $max = $value('payments.max_funding_kobo');
+            if ($max > $value('pricing.max_amount_kobo')) {
+                $validator->errors()->add('settings.'.self::field('payments.max_funding_kobo'), 'The maximum wallet funding cannot be above the pricing maximum amount.');
+            }
+            if ($min > $max) {
+                $validator->errors()->add('settings.'.self::field('payments.min_funding_kobo'), 'The minimum wallet funding cannot be above the maximum wallet funding.');
+            }
+        }];
     }
 
     /** @return array<string, string> */

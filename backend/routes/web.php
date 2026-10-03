@@ -4,6 +4,8 @@ use App\Http\Controllers\Admin\Auth\AdminSessionController;
 use App\Http\Controllers\Admin\CustomerController;
 use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
 use App\Http\Controllers\Admin\ModulePlaceholderController;
+use App\Http\Controllers\Admin\PaymentController;
+use App\Http\Controllers\Admin\PaymentGatewayController;
 use App\Http\Controllers\Admin\PlanController;
 use App\Http\Controllers\Admin\PlanPriceController;
 use App\Http\Controllers\Admin\PlanRouteController;
@@ -25,6 +27,7 @@ use App\Http\Controllers\Auth\NewPasswordController;
 use App\Http\Controllers\Auth\PasswordResetLinkController;
 use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\User\DashboardController;
+use App\Http\Controllers\User\FundWalletController;
 use App\Http\Controllers\User\PasswordController;
 use App\Http\Controllers\User\ProfileController;
 use App\Http\Controllers\User\SecurityController;
@@ -71,8 +74,15 @@ Route::middleware(['auth:web', 'auth.session'])->group(function () {
 
     // Profile stays reachable while unverified, so a mistyped email can be corrected.
     Route::get('dashboard', DashboardController::class)->middleware('verified.optional')->name('dashboard');
-    // The customer's own wallet (read-only in Phase 8: no deposits, withdrawals, purchases or transfers).
+    // The customer's own wallet. Funding goes through a payment gateway and is credited only
+    // after server-side verification. No withdrawals, purchases or transfers.
     Route::get('wallet', CustomerWalletController::class)->middleware('verified.optional')->name('wallet');
+    Route::middleware('verified.optional')->prefix('wallet/fund')->name('wallet.fund')->group(function () {
+        Route::get('/', [FundWalletController::class, 'create']);
+        Route::post('/', [FundWalletController::class, 'store'])->middleware('throttle:10,1')->name('.store');
+        Route::get('{reference}', [FundWalletController::class, 'show'])->where('reference', 'PAY-[0-9A-Z]{26}')
+            ->middleware('throttle:30,1')->name('.show');
+    });
 
     Route::get('profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('profile', [ProfileController::class, 'update'])->name('profile.update');
@@ -260,6 +270,35 @@ Route::prefix('admin')->name('admin.')->group(function () {
                     ->middleware([SystemPermission::WalletAdjust->middleware(), 'throttle:30,1'])->name('.reverse');
                 Route::patch('{customer}/status', [WalletController::class, 'updateStatus'])->whereNumber('customer')
                     ->middleware(SystemPermission::WalletManage->middleware())->name('.status');
+            });
+
+        // Payments (wallet funding): payments.view; recheck and closing a review need
+        // payments.manage; gateways need payments.gateways; credentials need
+        // payments.credentials. No "mark paid", refund or delete routes.
+        Route::middleware([SystemPermission::AdminAccess->middleware(), SystemPermission::PaymentsView->middleware()])
+            ->prefix('payments')->name('payments')->group(function () {
+                Route::get('/', [PaymentController::class, 'index']);
+                Route::get('gateways', [PaymentGatewayController::class, 'index'])->name('.gateways');
+                Route::middleware(SystemPermission::PaymentsGateways->middleware())->group(function () {
+                    Route::get('gateways/create', [PaymentGatewayController::class, 'create'])->name('.gateways.create');
+                    Route::post('gateways', [PaymentGatewayController::class, 'store'])->name('.gateways.store');
+                    Route::put('gateways/{gateway}', [PaymentGatewayController::class, 'update'])->whereNumber('gateway')->name('.gateways.update');
+                    Route::patch('gateways/{gateway}/status', [PaymentGatewayController::class, 'updateStatus'])->whereNumber('gateway')->name('.gateways.status');
+                    Route::patch('gateways/{gateway}/mode', [PaymentGatewayController::class, 'updateMode'])->whereNumber('gateway')->name('.gateways.mode');
+                    Route::patch('gateways/{gateway}/move', [PaymentGatewayController::class, 'move'])->whereNumber('gateway')->name('.gateways.move');
+                });
+                Route::get('gateways/{gateway}', [PaymentGatewayController::class, 'show'])->whereNumber('gateway')->name('.gateways.show');
+                Route::middleware(SystemPermission::PaymentsCredentials->middleware())->group(function () {
+                    Route::put('gateways/{gateway}/credentials/{mode}', [PaymentGatewayController::class, 'updateCredentials'])->whereNumber('gateway')
+                        ->whereIn('mode', ['sandbox', 'live'])->name('.gateways.credentials.update');
+                    Route::patch('gateways/{gateway}/credentials/{mode}/{key}/clear', [PaymentGatewayController::class, 'clearCredential'])->whereNumber('gateway')
+                        ->whereIn('mode', ['sandbox', 'live'])->where('key', '[a-z0-9_]{1,50}')->name('.gateways.credentials.clear');
+                });
+                Route::get('{payment}', [PaymentController::class, 'show'])->whereNumber('payment')->name('.show');
+                Route::middleware([SystemPermission::PaymentsManage->middleware(), 'throttle:30,1'])->group(function () {
+                    Route::post('{payment}/recheck', [PaymentController::class, 'recheck'])->whereNumber('payment')->name('.recheck');
+                    Route::post('{payment}/close-review', [PaymentController::class, 'closeReview'])->whereNumber('payment')->name('.close-review');
+                });
             });
 
         // Customer transactions (read-only in Phase 8): transactions.view.

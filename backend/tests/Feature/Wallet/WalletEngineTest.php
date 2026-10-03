@@ -58,7 +58,8 @@ describe('schema', function () {
                 expect(Schema::hasColumn($table, $column))->toBeFalse("{$table}.{$column} exists");
             }
         }
-        foreach (['purchases', 'provider_attempts', 'payments', 'withdrawals', 'deposits', 'wallet_holds'] as $table) {
+        // payments exists since Phase 9 and never holds balances (it links to one funding transaction).
+        foreach (['purchases', 'provider_attempts', 'withdrawals', 'deposits', 'wallet_holds'] as $table) {
             expect(Schema::hasTable($table))->toBeFalse("{$table} exists");
         }
     });

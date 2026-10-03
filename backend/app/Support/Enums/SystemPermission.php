@@ -64,6 +64,8 @@ enum SystemPermission: string
     // Payments
     case PaymentsView = 'payments.view';
     case PaymentsManage = 'payments.manage';
+    case PaymentsGateways = 'payments.gateways';
+    case PaymentsCredentials = 'payments.credentials';
 
     // Transactions
     case TransactionsView = 'transactions.view';
@@ -105,7 +107,7 @@ enum SystemPermission: string
             self::ServicesView, self::ServicesCreate, self::ServicesUpdate, self::ServicesDelete => PermissionModule::Services,
             self::PricingView, self::PricingUpdate => PermissionModule::Pricing,
             self::ProvidersView, self::ProvidersCreate, self::ProvidersUpdate, self::ProvidersDelete, self::ProvidersCredentials => PermissionModule::Providers,
-            self::PaymentsView, self::PaymentsManage => PermissionModule::Payments,
+            self::PaymentsView, self::PaymentsManage, self::PaymentsGateways, self::PaymentsCredentials => PermissionModule::Payments,
             self::TransactionsView, self::TransactionsManage => PermissionModule::Transactions,
             self::WithdrawalsView, self::WithdrawalsManage => PermissionModule::Withdrawals,
             self::ReferralsView, self::ReferralsManage => PermissionModule::Referrals,
@@ -129,6 +131,9 @@ enum SystemPermission: string
             self::ProvidersCredentials => 'Manage credentials',
             self::WalletAdjust => 'Credit / debit / reverse',
             self::WalletManage => 'Freeze / unfreeze',
+            self::PaymentsManage => 'Recheck / resolve review',
+            self::PaymentsGateways => 'Manage gateways',
+            self::PaymentsCredentials => 'Manage gateway credentials',
             self::WithdrawalsManage => 'Approve / manage',
             self::ReportsExport => 'Export',
             default => match (substr($this->value, strrpos($this->value, '.') + 1)) {

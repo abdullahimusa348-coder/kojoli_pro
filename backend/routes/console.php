@@ -10,3 +10,7 @@ Artisan::command('inspire', function () {
 
 // Delete expired Sanctum API tokens (needs the scheduler cron at deployment).
 Schedule::command('sanctum:prune-expired --hours=24')->daily();
+
+// Payments: recheck pending payments with their gateway, and clear old webhook payloads.
+Schedule::command('payments:reconcile')->everyFiveMinutes()->withoutOverlapping(10);
+Schedule::command('payments:prune-webhooks')->daily();

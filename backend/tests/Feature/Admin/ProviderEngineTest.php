@@ -880,8 +880,10 @@ describe('scope', function () {
         $this->get("/admin/providers/{$provider->id}")->assertOk();
 
         Http::assertNothingSent();
+        // Provider code makes no HTTP calls. The only HTTP client in app/ is the payment
+        // gateway client (Phase 9), which is restricted to adapter-declared hosts.
         $usesHttp = collect(File::allFiles(app_path()))->filter(fn ($f) => str_contains($f->getContents(), 'Facades\\Http') || str_contains($f->getContents(), 'GuzzleHttp'));
-        expect($usesHttp->map->getRelativePathname()->values()->all())->toBe([]);
+        expect($usesHttp->map->getRelativePathname()->values()->all())->toBe(['Services/Payments/PaymentHttpClient.php']);
     });
 
     it('adds no purchase, customer, mobile API, wallet or delete routes', function () {
@@ -891,7 +893,8 @@ describe('scope', function () {
             && in_array('DELETE', $r->methods(), true));
 
         expect($public->map->uri()->values()->all())->toBe([])->and($deletes)->toBeEmpty();
-        foreach (['orders', 'payments', 'commissions', 'purchases', 'provider_attempts'] as $table) {
+        // payments exists since Phase 9 (wallet funding through gateways); purchases still do not.
+        foreach (['orders', 'commissions', 'purchases', 'provider_attempts'] as $table) {
             expect(Schema::hasTable($table))->toBeFalse("{$table} exists");
         }
     });
