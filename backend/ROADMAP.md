@@ -8,7 +8,7 @@ Rule: build and test everything locally first. cPanel is used only in Phase 20. 
 | 2 | Authentication & user foundation ✅ | Session web auth (Breeze-style, custom), spatie roles/permissions, account types (API User, Affiliate, Subscriber, Vendor), Sanctum token auth foundation | Register, login, reset work; roles seeded; auth tests pass |
 | 3 | Admin Dashboard foundation ✅ (complete and closed: Step 1 layout, navigation, dashboard shell; Step 2 Settings Store; Step 3 System Users; Step 4 Roles & Permissions; Step 5 Customer Users) | Admin layout, navigation, settings store (config managed in DB), system users | Admin can log in and manage settings without `.env` |
 | 4 | User Dashboard foundation ✅ (complete and closed: Step 1 customer layout & navigation; Step 2 dashboard home; Step 3 account page; Step 4 security page; Step 5 closing checks) | Responsive user layout, profile, security settings | Mobile-first dashboard shell works |
-| 5 | Services & Categories | Admin-managed services (Data, Smile Data, NIN, BVN separate) | Services toggle on/off from admin |
+| 5 | Services & Categories (started: Step 1 ✅ catalog foundation) | Admin-managed services (Data, Smile Data, NIN, BVN separate) | Services toggle on/off from admin |
 | 6 | Products / Plans | Plans with per-tier pricing (API User, Affiliate, Subscriber, Vendor) | Price resolves correctly per user type |
 | 7 | Providers / API engine | Provider registry, per-plan primary and fallback, health and failover logic (no live calls until credentials are provided) | Failover covered by tests with simulated providers |
 | 8 | Wallet & Transactions | Ledger, balances, idempotent debits and credits, transaction states | Concurrency and rounding tests pass |

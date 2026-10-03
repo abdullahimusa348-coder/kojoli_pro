@@ -51,6 +51,6 @@ enum PermissionModule: string
     /** Whether the module's screens exist yet (its permissions are enforced today). */
     public function isBuilt(): bool
     {
-        return in_array($this, [self::Dashboard, self::SystemUsers, self::Roles, self::Settings, self::Users], true);
+        return in_array($this, [self::Dashboard, self::SystemUsers, self::Roles, self::Settings, self::Users, self::Services], true);
     }
 }

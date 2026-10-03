@@ -5,6 +5,8 @@ use App\Http\Controllers\Admin\CustomerController;
 use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
 use App\Http\Controllers\Admin\ModulePlaceholderController;
 use App\Http\Controllers\Admin\RoleController;
+use App\Http\Controllers\Admin\ServiceCategoryController;
+use App\Http\Controllers\Admin\ServiceController;
 use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\SystemUserController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
@@ -142,6 +144,28 @@ Route::prefix('admin')->name('admin.')->group(function () {
                 Route::post('{customer}/password-reset', [CustomerController::class, 'sendPasswordReset'])
                     ->middleware([SystemPermission::CustomersResetPassword->middleware(), 'throttle:10,1'])
                     ->name('.password-reset');
+            });
+
+        // Services & Categories (catalog only; services.* covers both). No delete routes.
+        Route::middleware([SystemPermission::AdminAccess->middleware(), SystemPermission::ServicesView->middleware()])
+            ->prefix('services')->name('services')->group(function () {
+                // Categories tab (registered before {service} routes)
+                Route::get('categories', [ServiceCategoryController::class, 'index'])->name('.categories');
+                Route::get('categories/create', [ServiceCategoryController::class, 'create'])->middleware(SystemPermission::ServicesCreate->middleware())->name('.categories.create');
+                Route::post('categories', [ServiceCategoryController::class, 'store'])->middleware(SystemPermission::ServicesCreate->middleware())->name('.categories.store');
+                Route::get('categories/{category}', [ServiceCategoryController::class, 'show'])->whereNumber('category')->name('.categories.show');
+                Route::get('categories/{category}/edit', [ServiceCategoryController::class, 'edit'])->whereNumber('category')->middleware(SystemPermission::ServicesUpdate->middleware())->name('.categories.edit');
+                Route::put('categories/{category}', [ServiceCategoryController::class, 'update'])->whereNumber('category')->middleware(SystemPermission::ServicesUpdate->middleware())->name('.categories.update');
+                Route::patch('categories/{category}/status', [ServiceCategoryController::class, 'updateStatus'])->whereNumber('category')->middleware(SystemPermission::ServicesUpdate->middleware())->name('.categories.status');
+
+                // Services tab
+                Route::get('/', [ServiceController::class, 'index']);
+                Route::get('create', [ServiceController::class, 'create'])->middleware(SystemPermission::ServicesCreate->middleware())->name('.create');
+                Route::post('/', [ServiceController::class, 'store'])->middleware(SystemPermission::ServicesCreate->middleware())->name('.store');
+                Route::get('{service}', [ServiceController::class, 'show'])->whereNumber('service')->name('.show');
+                Route::get('{service}/edit', [ServiceController::class, 'edit'])->whereNumber('service')->middleware(SystemPermission::ServicesUpdate->middleware())->name('.edit');
+                Route::put('{service}', [ServiceController::class, 'update'])->whereNumber('service')->middleware(SystemPermission::ServicesUpdate->middleware())->name('.update');
+                Route::patch('{service}/status', [ServiceController::class, 'updateStatus'])->whereNumber('service')->middleware(SystemPermission::ServicesUpdate->middleware())->name('.status');
             });
 
         // Modules not built yet: navigation placeholders only, no business logic.
