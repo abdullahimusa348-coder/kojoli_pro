@@ -880,10 +880,10 @@ describe('scope', function () {
         $this->get("/admin/providers/{$provider->id}")->assertOk();
 
         Http::assertNothingSent();
-        // Provider code makes no HTTP calls. The only HTTP client in app/ is the payment
-        // gateway client (Phase 9), which is restricted to adapter-declared hosts.
+        // Provider configuration makes no HTTP calls. The only HTTP clients in app/ are the payment
+        // gateway client (Phase 9) and the provider client (Phase 10), both restricted to adapter-declared hosts.
         $usesHttp = collect(File::allFiles(app_path()))->filter(fn ($f) => str_contains($f->getContents(), 'Facades\\Http') || str_contains($f->getContents(), 'GuzzleHttp'));
-        expect($usesHttp->map->getRelativePathname()->values()->all())->toBe(['Services/Payments/PaymentHttpClient.php']);
+        expect($usesHttp->map->getRelativePathname()->sort()->values()->all())->toBe(['Services/Payments/PaymentHttpClient.php', 'Services/Providers/ProviderHttpClient.php']);
     });
 
     it('adds no purchase, customer, mobile API, wallet or delete routes', function () {

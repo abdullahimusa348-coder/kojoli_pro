@@ -364,5 +364,5 @@ it('adds no purchase engine, provider execution, customer purchase routes or ada
 
     expect($routes->filter(fn ($uri) => preg_match('/(buy|purchase|vend|order)/i', $uri) && $uri !== 'admin/purchases')->values()->all())->toBe([])
         ->and(class_exists('App\\Services\\Purchases\\PurchaseService'))->toBeFalse()
-        ->and(config('providers.drivers'))->toBeNull();
+        ->and(config('providers.drivers'))->toBe([]); // the adapter registry (CP2) ships with no adapters
 });
