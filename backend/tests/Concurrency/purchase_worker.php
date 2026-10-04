@@ -14,6 +14,7 @@
  *         | credit (WalletService adjustment credit of <target> kobo to the customer's wallet)
  *         | reprice (after <delay-ms>, sets the Subscriber price of plan <target> to <key> kobo)
  *         | freeze (after <delay-ms>, freezes the customer's wallet; prints the highest ledger entry id after the freeze committed)
+ *         | verify (runs purchases:verify <count> times; prints clean or the problems it reported)
  *   script: provider answers for purchase calls (buy/execute/submit) or status queries (reconcile/recheck)
  */
 
@@ -34,6 +35,7 @@ use App\Support\Wallet\WalletStatus;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Contracts\Http\Kernel as HttpKernel;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -80,6 +82,12 @@ for ($i = 0; $i < (int) $count; $i++) {
     try {
         if ($mode === 'reconcile') {
             echo json_encode(['result' => 'ok', 'stats' => $service->reconcile()]), "\n";
+
+            continue;
+        }
+        if ($mode === 'verify') {
+            $code = Artisan::call('purchases:verify');
+            echo json_encode($code === 0 ? ['result' => 'clean'] : ['result' => 'problems', 'output' => trim(Artisan::output())]), "\n";
 
             continue;
         }

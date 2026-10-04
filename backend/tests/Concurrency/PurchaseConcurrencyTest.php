@@ -440,3 +440,23 @@ it('commits no purchase debit after a wallet freeze that races with purchases', 
     }
     pucWalletConsistent($user->id);
 });
+
+it('lets purchases:verify find no problem while purchases, refunds and credits commit around it', function () {
+    $plan = puxPlan('data', 10_000);
+    puxRoute($plan);
+    $user = puxCustomer(500_000);
+
+    $results = collect(pucRace([
+        ...array_fill(0, 3, ['buy', $user->id, $plan->id, 10, 'ok', 'succeeded', 15]),
+        ...array_fill(0, 2, ['buy', $user->id, $plan->id, 10, 'fail', 'failed_definite', 15]),
+        ['credit', $user->id, 1_000, 10, '-', '-', 0],
+        ...array_fill(0, 2, ['verify', 0, 0, 20, '-', '-', 0]),
+    ]));
+
+    expect($results->where('result', 'error')->values()->all())->toBe([])
+        ->and($results->where('result', 'problems')->values()->all())->toBe([])
+        ->and($results->where('result', 'clean')->count())->toBe(40)
+        ->and(Purchase::count())->toBe(50)
+        ->and(Artisan::call('purchases:verify'))->toBe(0);
+    pucWalletConsistent($user->id);
+});

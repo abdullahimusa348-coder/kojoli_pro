@@ -2,6 +2,7 @@
 
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schedule;
 
 Artisan::command('inspire', function () {
@@ -17,3 +18,10 @@ Schedule::command('payments:prune-webhooks')->daily();
 
 // Purchases: re-check purchases with an unclear provider outcome.
 Schedule::command('purchases:reconcile')->everyFiveMinutes()->withoutOverlapping(10);
+
+// Integrity checks, daily. They report only and never repair: a run that finds
+// problems is logged as an error; run the command manually to see the details.
+foreach (['wallet:verify', 'purchases:verify'] as $check) {
+    Schedule::command($check)->daily()
+        ->onFailure(fn () => Log::error('Scheduled integrity check found problems', ['command' => $check]));
+}

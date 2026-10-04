@@ -7,6 +7,7 @@ use App\Models\SystemUser;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Models\Wallet;
+use App\Services\Purchases\PurchaseMonitor;
 use App\Support\Admin\AdminModule;
 use App\Support\BusinessTime;
 use App\Support\Money;
@@ -20,6 +21,8 @@ use Illuminate\Support\Str;
  */
 class DashboardMetrics
 {
+    public function __construct(private PurchaseMonitor $purchases) {}
+
     /**
      * @return list<array{key: string, label: string, value: string, live: bool, note: string, url?: string, link?: string}> cards the staff member may see
      */
@@ -86,6 +89,28 @@ class DashboardMetrics
             'note' => $sales['count'].' successful '.Str::plural('purchase', $sales['count']).' today ('.BusinessTime::timezone().')',
             'url' => route('admin.purchases', ['status' => PurchaseStatus::Successful->value, 'completed' => 'today']),
             'link' => 'View today’s purchases',
+        ];
+    }
+
+    /**
+     * Purchases that need staff attention (purchases.view only): in review, or
+     * with an overdue status check. Null when nothing needs attention.
+     *
+     * @return array{review: int, overdue: int, review_url: string, overdue_url: string}|null
+     */
+    public function purchaseAttentionFor(SystemUser $staff): ?array
+    {
+        if (! $staff->can(AdminModule::Purchases->permission())) {
+            return null;
+        }
+        $attention = $this->purchases->attention();
+        if ($attention['review'] === 0 && $attention['overdue'] === 0) {
+            return null;
+        }
+
+        return $attention + [
+            'review_url' => route('admin.purchases', ['status' => PurchaseStatus::Review->value]),
+            'overdue_url' => route('admin.purchases', ['overdue' => 1]),
         ];
     }
 

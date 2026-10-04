@@ -26,4 +26,10 @@ return [
     'reconcile_batch' => 50,
     'reconcile_min_age_minutes' => 2,
 
+    // A pending or review purchase whose next check has been due for longer
+    // than this is "overdue" in the admin monitoring: reconciliation runs every
+    // five minutes, so an overdue check means the scheduler is not running or
+    // is falling behind.
+    'overdue_after_minutes' => 15,
+
 ];

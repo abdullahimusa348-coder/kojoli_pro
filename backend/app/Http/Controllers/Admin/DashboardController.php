@@ -18,6 +18,7 @@ class DashboardController extends Controller
             'cards' => $metrics->cardsFor($staff),
             'showRecentTransactions' => $metrics->showsRecentTransactions($staff),
             'recentTransactions' => $metrics->recentTransactions(),
+            'purchaseAttention' => $metrics->purchaseAttentionFor($staff),
         ]);
     }
 }

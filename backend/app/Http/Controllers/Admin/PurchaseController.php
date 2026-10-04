@@ -6,7 +6,9 @@ use App\Actions\Admin\Purchases\RecheckPurchase;
 use App\Http\Controllers\Controller;
 use App\Models\Provider;
 use App\Models\Purchase;
+use App\Models\PurchaseStatusChange;
 use App\Models\Service;
+use App\Services\Purchases\PurchaseMonitor;
 use App\Support\BusinessTime;
 use App\Support\Catalog\Network;
 use App\Support\Phone\NigerianPhone;
@@ -24,7 +26,7 @@ use Illuminate\View\View;
  */
 class PurchaseController extends Controller
 {
-    public function index(Request $request): View
+    public function index(Request $request, PurchaseMonitor $monitor): View
     {
         $filters = $request->validate([
             'q' => ['nullable', 'string', 'max:100'],
@@ -36,11 +38,17 @@ class PurchaseController extends Controller
             'to' => ['nullable', 'date', 'after_or_equal:from'],
             // Completed during the current business day: the same window as Today's Sales.
             'completed' => ['nullable', Rule::in(['today'])],
+            // Pending or review purchases whose status check is overdue (PurchaseMonitor).
+            'overdue' => ['nullable', Rule::in(['1'])],
         ]);
 
         $purchases = Purchase::query()
             ->select(['id', 'reference', 'user_id', 'service_name', 'product_name', 'plan_name', 'network', 'recipient', 'amount_kobo', 'status',
-                'successful_attempt_id', 'created_at'])
+                'successful_attempt_id', 'next_check_at', 'created_at'])
+            // When the purchase moved to review (its first transition into review).
+            ->addSelect(['review_since' => PurchaseStatusChange::select('created_at')->whereColumn('purchase_id', 'purchases.id')
+                ->where('new_status', PurchaseStatus::Review->value)->whereColumn('old_status', '!=', 'new_status')->orderBy('id')->limit(1)])
+            ->withCasts(['review_since' => 'datetime'])
             ->with(['user:id,name,email', 'successfulAttempt:id,provider_id,route_priority', 'successfulAttempt.provider:id,name'])
             ->when($filters['q'] ?? null, function ($query, string $term) {
                 $like = '%'.addcslashes($term, '%_\\').'%';
@@ -56,18 +64,21 @@ class PurchaseController extends Controller
             ->when($filters['from'] ?? null, fn ($query, string $from) => $query->where('created_at', '>=', $from.' 00:00:00'))
             ->when($filters['to'] ?? null, fn ($query, string $to) => $query->where('created_at', '<=', $to.' 23:59:59'))
             ->when(($filters['completed'] ?? null) === 'today', fn ($query) => $query->completedToday())
+            ->when(($filters['overdue'] ?? null) === '1', fn ($query) => $query->checkOverdue())
             ->latest('id')
             ->paginate(25)
             ->withQueryString();
 
         return view('admin.purchases.index', [
             'purchases' => $purchases,
+            'monitor' => $monitor->summary(),
+            // Rows on this page whose check is overdue, by the same rule as the count.
+            'overdueIds' => Purchase::query()->checkOverdue()->whereKey($purchases->pluck('id'))->pluck('id')->all(),
             'filters' => $filters,
             'statuses' => PurchaseStatus::cases(),
             'networks' => Network::cases(),
             'services' => Service::whereIn('id', Purchase::select('service_id')->distinct())->orderBy('name')->get(['id', 'name']),
             'providers' => Provider::orderBy('name')->get(['id', 'name']),
-            'reviewCount' => Purchase::where('status', PurchaseStatus::Review->value)->count(),
             'businessTimezone' => BusinessTime::timezone(),
         ]);
     }

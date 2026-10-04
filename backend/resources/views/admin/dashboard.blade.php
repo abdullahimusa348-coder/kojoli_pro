@@ -26,6 +26,18 @@
         </section>
     @endif
 
+    @if ($purchaseAttention)
+        <section class="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-2xl bg-amber-50 px-5 py-3 text-sm text-amber-900 ring-1 ring-amber-200" aria-label="Purchases needing attention" data-panel="purchase-attention">
+            <span class="font-semibold">Purchases need attention:</span>
+            @if ($purchaseAttention['review'] > 0)
+                <a href="{{ $purchaseAttention['review_url'] }}" class="underline hover:no-underline" data-attention="review">{{ $purchaseAttention['review'] }} in review</a>
+            @endif
+            @if ($purchaseAttention['overdue'] > 0)
+                <a href="{{ $purchaseAttention['overdue_url'] }}" class="underline hover:no-underline" data-attention="overdue">{{ $purchaseAttention['overdue'] }} overdue status {{ Str::plural('check', $purchaseAttention['overdue']) }}</a>
+            @endif
+        </section>
+    @endif
+
     @if ($showRecentTransactions)
         <section class="mt-6 rounded-2xl bg-white shadow-sm ring-1 ring-navy-100" aria-labelledby="recent-transactions" data-panel="recent-transactions">
             <div class="border-b border-navy-100 px-5 py-4">

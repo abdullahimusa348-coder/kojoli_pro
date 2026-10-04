@@ -164,7 +164,8 @@ describe('Today’s Sales', function () {
         $this->actingAs(tsStaff(['purchases.view']), 'admin');
         DB::enableQueryLog();
         $this->get('/admin')->assertOk()->assertSee('data-card="todays-sales"', false)->assertDontSee('data-card="wallet-balance"', false);
-        expect(tsPurchaseQueries())->toHaveCount(1);
+        // The card is one aggregate query (the dashboard's purchase-attention line adds its own, tested in CP2).
+        expect(array_values(array_filter(tsPurchaseQueries(), fn ($q) => str_contains($q, 'sales_total'))))->toHaveCount(1);
 
         DB::flushQueryLog();
         $this->actingAs(tsStaff(['transactions.view']), 'admin');

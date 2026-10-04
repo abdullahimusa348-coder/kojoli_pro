@@ -17,6 +17,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Carbon;
 use InvalidArgumentException;
 use LogicException;
 
@@ -162,6 +163,33 @@ class Purchase extends Model
     {
         [$start, $end] = BusinessTime::today();
         $query->where('completed_at', '>=', $start)->where('completed_at', '<', $end);
+    }
+
+    /**
+     * When reconciliation will next check this purchase, as reconcile() decides
+     * what is due: its scheduled check, or, for a pending purchase never
+     * scheduled, the minimum age after creation. Null once it is final.
+     */
+    public function checkDueAt(): ?Carbon
+    {
+        if ($this->isFinal()) {
+            return null;
+        }
+
+        return $this->next_check_at ?? $this->created_at?->copy()->addMinutes(config('purchases.reconcile_min_age_minutes'));
+    }
+
+    /**
+     * Pending or review purchases whose check has been due for longer than
+     * purchases.overdue_after_minutes (the same due rule as checkDueAt()).
+     */
+    public function scopeCheckOverdue(Builder $query): void
+    {
+        $limit = now()->subMinutes(config('purchases.overdue_after_minutes'));
+        $query->whereIn('status', [PurchaseStatus::Pending->value, PurchaseStatus::Review->value])
+            ->where(fn (Builder $due) => $due->where('next_check_at', '<', $limit)
+                ->orWhere(fn (Builder $never) => $never->whereNull('next_check_at')
+                    ->where('created_at', '<', $limit->copy()->subMinutes(config('purchases.reconcile_min_age_minutes')))));
     }
 
     private function enforceInvariants(): void
