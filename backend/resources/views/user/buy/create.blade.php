@@ -10,12 +10,14 @@
         <p class="mt-1 text-sm text-navy-600">Wallet balance: <span class="font-semibold tabular-nums text-navy-900" data-balance>{{ \App\Support\Money::format($balanceKobo) }}</span></p>
     </section>
 
-    @if ($errors->has('purchase'))
+    @if ($errors->has('purchase') && ! $maintenance)
         <x-alert type="error" class="mt-4" data-purchase-error>{{ $errors->first('purchase') }}</x-alert>
     @endif
 
     <section class="mt-6 max-w-xl rounded-2xl bg-white p-5 shadow-sm ring-1 ring-navy-100 sm:p-6" data-buy-card>
-        @if ($plans->isEmpty())
+        @if ($maintenance)
+            @include('partials.purchases.maintenance-notice')
+        @elseif ($plans->isEmpty())
             <p class="text-sm text-navy-700" data-unavailable>Not available right now. Please try again later.</p>
         @else
             <form method="GET" action="{{ route('buy.service', $service) }}" class="mb-5" data-network-picker>

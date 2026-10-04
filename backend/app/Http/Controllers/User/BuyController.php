@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Plan;
 use App\Services\Purchases\PurchaseCatalog;
 use App\Services\Purchases\PurchaseService;
+use App\Support\MaintenanceMode;
 use App\Support\Phone\NigerianPhone;
 use App\Support\Pricing\KoboAmount;
 use Illuminate\Http\RedirectResponse;
@@ -23,6 +24,9 @@ use Illuminate\View\View;
  * PurchaseService when buying: client-sent prices, customer ids or statuses
  * are never used. Each confirmation carries a one-time token (the purchase
  * idempotency key), so repeated submissions cannot buy or debit twice.
+ * In maintenance mode the pages show the maintenance notice instead of the
+ * forms, confirming is refused (no token is issued) and PurchaseService
+ * refuses new purchases.
  */
 class BuyController extends Controller
 {
@@ -31,9 +35,11 @@ class BuyController extends Controller
     public function index(Request $request): View
     {
         $user = $request->user();
+        $maintenance = MaintenanceMode::active();
 
         return view('user.buy.index', [
-            'services' => collect(PurchaseCatalog::SERVICES)->map(fn ($label, $slug) => [
+            'maintenance' => $maintenance,
+            'services' => $maintenance ? collect() : collect(PurchaseCatalog::SERVICES)->map(fn ($label, $slug) => [
                 'slug' => $slug, 'label' => $label, 'available' => $this->catalog->plans($user, $slug)->isNotEmpty(),
             ])->values(),
         ]);
@@ -41,11 +47,13 @@ class BuyController extends Controller
 
     public function create(Request $request, string $service): View
     {
-        $plans = $this->catalog->plans($request->user(), $service);
+        $maintenance = MaintenanceMode::active();
+        $plans = $maintenance ? collect() : $this->catalog->plans($request->user(), $service);
         $networks = $plans->map(fn ($row) => $row['plan']->product->network)->filter()->unique(fn ($n) => $n->value)->values();
         $network = $networks->first(fn ($n) => $n->value === $request->query('network')) ?? $networks->first();
 
         return view('user.buy.create', [
+            'maintenance' => $maintenance,
             'service' => $service,
             'label' => PurchaseCatalog::SERVICES[$service],
             'networks' => $networks,
@@ -57,6 +65,9 @@ class BuyController extends Controller
 
     public function confirm(Request $request, string $service): View|RedirectResponse
     {
+        if (MaintenanceMode::active()) {
+            return redirect()->route('buy.service', $service)->withErrors(['purchase' => MaintenanceMode::MESSAGE]);
+        }
         [$plan, $phone, $face] = $this->validated($request, $service);
         $quote = $this->catalog->quote($plan, $request->user(), $face);
         if (! $quote->available) {

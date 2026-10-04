@@ -32,4 +32,11 @@ return [
     // is falling behind.
     'overdue_after_minutes' => 15,
 
+    // Customer result page: a pending purchase made less than
+    // `customer_refresh_window_minutes` ago reloads itself every
+    // `customer_refresh_seconds` (the customer can stop it; the manual
+    // Refresh link stays). Under review and final purchases never do.
+    'customer_refresh_seconds' => 30,
+    'customer_refresh_window_minutes' => 10,
+
 ];

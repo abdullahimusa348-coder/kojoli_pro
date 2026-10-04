@@ -41,6 +41,7 @@
                         <div class="min-w-0">
                             <p class="break-words font-medium text-navy-900">{{ $entry->description }}</p>
                             <p class="break-all text-xs text-navy-500"><time datetime="{{ $entry->created_at?->toIso8601String() }}">{{ $entry->created_at?->format('j M Y, H:i') }}</time> · <span class="font-mono">{{ $entry->reference }}</span></p>
+                            @include('partials.wallet.purchase-link', ['transaction' => $entry->transaction])
                         </div>
                         <div class="text-right">
                             @include('partials.wallet.amount', ['direction' => $entry->direction, 'kobo' => $entry->amount_kobo])
@@ -64,6 +65,7 @@
                         <div class="min-w-0">
                             <p class="break-words font-medium text-navy-900">{{ $transaction->description }}</p>
                             <p class="break-all text-xs text-navy-500">{{ $transaction->created_at?->format('j M Y, H:i') }} · <span class="font-mono">{{ $transaction->reference }}</span></p>
+                            @include('partials.wallet.purchase-link', ['transaction' => $transaction])
                         </div>
                         <div class="flex items-center gap-2">
                             @include('partials.wallet.status-badge', ['status' => $transaction->status])

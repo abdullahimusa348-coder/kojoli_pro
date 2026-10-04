@@ -41,5 +41,16 @@
             @endif
             <a href="{{ route('wallet') }}" class="inline-flex items-center rounded-lg px-4 py-2 text-sm font-medium text-navy-800 ring-1 ring-navy-200 hover:bg-navy-50">Go to wallet</a>
         </div>
+
+        @if ($autoRefreshSeconds !== null)
+            {{-- Reloads once after the interval; the server decides again on every load. Hidden without JavaScript, where Refresh still works. --}}
+            <div class="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-navy-50 px-3 py-2 text-sm text-navy-700" role="status" x-cloak
+                 x-data="{ on: true, timer: null }" x-init="timer = setTimeout(() => window.location.reload(), {{ $autoRefreshSeconds * 1000 }})"
+                 data-auto-refresh="{{ $autoRefreshSeconds }}">
+                <p x-show="on">This page checks for updates every {{ $autoRefreshSeconds }} seconds.</p>
+                <button type="button" x-show="on" x-on:click="on = false; clearTimeout(timer)" class="font-semibold text-brand-700 underline hover:text-brand-800" data-auto-refresh-stop>Stop</button>
+                <p x-show="! on" data-auto-refresh-stopped>Automatic updates stopped. Use Refresh to check again.</p>
+            </div>
+        @endif
     </section>
 @endsection

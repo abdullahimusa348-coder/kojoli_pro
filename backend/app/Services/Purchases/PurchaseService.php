@@ -20,6 +20,7 @@ use App\Services\Providers\ProviderAdapterRegistry;
 use App\Services\Providers\ProviderCaller;
 use App\Services\Providers\RouteCandidate;
 use App\Services\Wallet\WalletService;
+use App\Support\MaintenanceMode;
 use App\Support\Phone\NigerianPhone;
 use App\Support\Providers\ProviderOutcome;
 use App\Support\Purchases\PurchaseAttemptStatus;
@@ -74,9 +75,10 @@ class PurchaseService
     /**
      * Creates the pending purchase and debits the wallet in one database
      * transaction. A repeated key with the same details returns the existing
-     * purchase without another debit; with different details it is refused.
-     * Nothing is created or debited when the plan is not purchasable, no
-     * executable route exists, or the wallet cannot pay. The price is always
+     * purchase without another debit (also during maintenance mode); with
+     * different details it is refused. Nothing is created or debited when
+     * maintenance mode is on, the plan is not purchasable, no executable
+     * route exists, or the wallet cannot pay. The price is always
      * resolved here on the server; $confirmedAmountKobo (what the customer saw
      * and confirmed) is only compared with it, and a difference is refused.
      *
@@ -89,6 +91,10 @@ class PurchaseService
 
         if ($existing = $this->existing($user, $idempotencyKey, $fingerprint)) {
             return $existing;
+        }
+        // After the lookup above (a repeated submission still gets its purchase), before any pricing, debit or provider call.
+        if (MaintenanceMode::active()) {
+            throw new PurchaseException(MaintenanceMode::MESSAGE);
         }
 
         $quote = $this->prices->quoteFor($plan, $user, $faceValueKobo);

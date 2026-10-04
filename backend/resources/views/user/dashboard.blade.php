@@ -30,6 +30,35 @@
         <a href="{{ route('wallet') }}" class="inline-flex shrink-0 items-center justify-center rounded-lg bg-white px-4 py-2 text-sm font-semibold text-navy-900 hover:bg-navy-50">View wallet</a>
     </section>
 
+    {{-- Recent purchases: the customer's own latest purchases, newest first (only once they have bought something) --}}
+    @if ($recentPurchases->isNotEmpty())
+        <section class="mt-6 overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-navy-100" aria-labelledby="recent-purchases-heading" data-recent-purchases>
+            <div class="flex flex-wrap items-center justify-between gap-2 border-b border-navy-100 px-5 py-3">
+                <h2 id="recent-purchases-heading" class="text-base font-semibold text-navy-900">Recent purchases</h2>
+                <a href="{{ route('purchases') }}" class="text-sm font-medium text-brand-700 hover:underline" data-view-all-purchases>View all</a>
+            </div>
+            @if ($purchasesInProgress > 0)
+                <p class="border-b border-navy-100 bg-amber-50 px-5 py-2 text-sm text-amber-900" data-purchases-in-progress="{{ $purchasesInProgress }}">
+                    {{ $purchasesInProgress === 1 ? '1 purchase is' : $purchasesInProgress.' purchases are' }} still being confirmed. There is no need to buy again.
+                </p>
+            @endif
+            <ul class="divide-y divide-navy-100" role="list">
+                @foreach ($recentPurchases as $purchase)
+                    <li class="flex flex-wrap items-center justify-between gap-2 px-5 py-3 text-sm" data-recent-purchase="{{ $purchase->reference }}">
+                        <div class="min-w-0">
+                            <a href="{{ route('purchases.show', $purchase->reference) }}" class="block break-words font-medium text-navy-900 hover:text-brand-700">{{ $purchase->service_name }} · {{ $purchase->amount_type === \App\Support\Catalog\AmountType::Variable ? \App\Support\Money::format($purchase->face_value_kobo) : $purchase->plan_name }}</a>
+                            <p class="break-all text-xs text-navy-500">{{ $purchase->network?->label() }} · <span class="tabular-nums">{{ $purchase->recipient }}</span> · {{ $purchase->created_at?->format('j M Y, H:i') }}</p>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            @include('partials.purchases.customer-status-badge', ['status' => $purchase->status])
+                            <span class="font-semibold tabular-nums text-navy-900">{{ \App\Support\Money::format($purchase->amount_kobo) }}</span>
+                        </div>
+                    </li>
+                @endforeach
+            </ul>
+        </section>
+    @endif
+
     <div class="mt-6 grid gap-6 lg:grid-cols-3">
         {{-- Account summary --}}
         <section class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-navy-100 sm:p-6 lg:col-span-2" aria-labelledby="summary-heading" data-account-summary>
@@ -74,7 +103,7 @@
             </dl>
         </section>
 
-        {{-- Shortcuts to existing account pages --}}
+        {{-- Shortcuts: Buy (only while something can be bought and maintenance mode is off) and the account pages --}}
         <section aria-labelledby="shortcuts-heading">
             <h2 id="shortcuts-heading" class="sr-only">Shortcuts</h2>
             <ul class="grid gap-4 sm:grid-cols-2 lg:grid-cols-1" role="list">

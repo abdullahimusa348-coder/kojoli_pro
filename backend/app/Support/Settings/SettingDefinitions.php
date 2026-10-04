@@ -60,7 +60,7 @@ class SettingDefinitions
                 'type' => SettingType::Boolean,
                 'value' => false,
                 'label' => 'Maintenance mode',
-                'description' => 'Stored flag for taking customer services offline. Not enforced yet: it takes effect when services are built.',
+                'description' => 'When on, customers cannot start new Data or Airtime purchases. Purchases already in progress, re-checks, refunds and the admin area keep working; wallet funding is not affected.',
                 'is_public' => true,
             ],
             'pricing.max_amount_kobo' => [
