@@ -254,7 +254,7 @@ describe('routes', function () {
         expect($routes->map(fn ($r) => [$r->priority, $r->provider->name, $r->provider_plan_code])->all())->toBe([[1, 'Alpha', 'MTN1G30'], [2, 'Beta', 'Mtn_1GB_30D']])
             ->and($plan->fresh()->code)->toBe('data-mtn-1gb')
             ->and(PlanProviderRouteChange::where('event', 'created')->count())->toBe(2);
-        $this->get("/admin/services/plans/{$plan->id}/routes")->assertOk()->assertSee('Will try: 1 Alpha → 2 Beta')
+        $this->get("/admin/services/plans/{$plan->id}/routes")->assertOk()->assertSee('Eligible order: 1 Alpha → 2 Beta')
             ->assertSee('Created: priority 2, code Mtn_1GB_30D, Cost not set');
     });
 
@@ -367,7 +367,7 @@ describe('routes', function () {
         expect(PlanProviderRouteChange::where('event', 'moved')->count())->toBe(4)
             ->and(PlanProviderRoute::where('priority', 0)->exists())->toBeFalse()
             ->and(PlanProviderRoute::where('plan_id', $plan->id)->pluck('priority')->unique()->count())->toBe(3);
-        $this->get("/admin/services/plans/{$plan->id}/routes")->assertSee('Will try: 1 Gamma → 2 Alpha → 3 Beta');
+        $this->get("/admin/services/plans/{$plan->id}/routes")->assertSee('Eligible order: 1 Gamma → 2 Alpha → 3 Beta');
     });
 });
 

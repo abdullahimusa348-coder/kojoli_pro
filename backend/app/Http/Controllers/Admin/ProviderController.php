@@ -9,6 +9,7 @@ use App\Http\Requests\Admin\Providers\ProviderRequest;
 use App\Models\Product;
 use App\Models\Provider;
 use App\Models\Service;
+use App\Services\Providers\ProviderAdapterRegistry;
 use App\Support\Providers\CredentialKey;
 use App\Support\Providers\ProviderStatus;
 use Illuminate\Http\RedirectResponse;
@@ -17,12 +18,13 @@ use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
 /**
- * Providers admin module (providers.*). Configuration only: no API calls,
- * adapters or purchasing. Credential values are never passed to views.
+ * Providers admin module (providers.*): configuration plus read-only adapter
+ * readiness (installed adapter, the services and credentials it needs, base
+ * URL host). No API calls. Credential values are never passed to views.
  */
 class ProviderController extends Controller
 {
-    public function index(Request $request): View
+    public function index(Request $request, ProviderAdapterRegistry $registry): View
     {
         $filters = $request->validate([
             'q' => ['nullable', 'string', 'max:100'],
@@ -41,7 +43,8 @@ class ProviderController extends Controller
             ->paginate(15)
             ->withQueryString();
 
-        return view('admin.providers.index', ['providers' => $providers, 'filters' => $filters, 'statuses' => ProviderStatus::cases()]);
+        return view('admin.providers.index', ['providers' => $providers, 'filters' => $filters, 'statuses' => ProviderStatus::cases(),
+            'installedDrivers' => array_keys($registry->adapters())]);
     }
 
     public function create(): View
@@ -56,13 +59,16 @@ class ProviderController extends Controller
         return redirect()->route('admin.providers.show', $provider)->with('status', "Provider “{$provider->name}” created (inactive).");
     }
 
-    public function show(Provider $provider): View
+    public function show(Provider $provider, ProviderAdapterRegistry $registry): View
     {
         $provider->load(['services.service.category', 'credentials.updatedBy', 'routes.plan.product.service']);
         $supported = $provider->services->pluck('service_id');
+        $readiness = $registry->providerReadiness($provider);
 
         return view('admin.providers.show', [
             'provider' => $provider,
+            'readiness' => $readiness,
+            'adapterServiceNames' => Service::whereIn('slug', $readiness->services)->pluck('name', 'slug'),
             'statuses' => ProviderStatus::cases(),
             'credentialKeys' => CredentialKey::cases(),
             'credentials' => $provider->credentials->keyBy(fn ($c) => $c->key->value),

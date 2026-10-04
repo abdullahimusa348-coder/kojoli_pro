@@ -5,7 +5,7 @@
 
 @section('page')
     <div class="flex flex-wrap items-start justify-between gap-3">
-        <p class="max-w-2xl text-sm text-navy-600">External providers and the services they support. Configuration only: no provider is called until provider integrations are built (Phase 10).</p>
+        <p class="max-w-2xl text-sm text-navy-600">External providers and the services they support. A provider is called for purchases only when an adapter is installed for its driver and one of its plan routes can run.</p>
         @can(\App\Support\Enums\SystemPermission::ProvidersCreate->value)
             <a href="{{ route('admin.providers.create') }}" class="inline-flex items-center rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700">Add provider</a>
         @endcan
@@ -52,6 +52,7 @@
                         <div class="flex flex-wrap gap-2">
                             @include('admin.providers.status', ['status' => $provider->status])
                             @include('admin.providers.config-badge', ['provider' => $provider])
+                            @include('admin.providers.adapter-badge', ['installed' => filled($provider->driver) && in_array($provider->driver, $installedDrivers, true)])
                         </div>
                     </li>
                 @endforeach

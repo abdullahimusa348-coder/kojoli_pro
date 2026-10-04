@@ -20,17 +20,25 @@
             @include('admin.services.partials.status', ['label' => $plan->statusLabel()])
             @include('admin.services.routes.badge', ['candidates' => $candidates])
         </div>
-        <p class="mt-3 text-xs text-navy-500">Routes are tried in priority order (1 = primary) once provider integrations exist (Phase 10). Nothing is sent to any provider now. Provider cost is informational and never affects eligibility.</p>
+        <p class="mt-3 text-xs text-navy-500">Purchases try runnable routes in priority order (1 = primary). A route is runnable when it is eligible and its provider's adapter is installed, supports this service, has the credentials it needs and accepts the base URL host. Nothing is sent to any provider from this page. Provider cost is informational and never affects eligibility.</p>
     </section>
 
     <section class="mt-6 max-w-4xl rounded-2xl bg-white p-5 shadow-sm ring-1 ring-navy-100 sm:p-6" data-routing-preview>
         <h2 class="text-base font-semibold text-navy-900">Routing preview</h2>
         @php($eligible = array_values(array_filter($candidates, fn ($c) => $c->eligible)))
+        @php($runnable = array_values(array_filter($readiness, fn ($r) => $r->runnable())))
         <p class="mt-1 break-words text-sm text-navy-800" data-preview-order>
             @if ($eligible === [])
                 No eligible provider.
             @else
-                Will try: {{ collect($eligible)->map(fn ($c, $i) => ($i + 1).' '.$c->route->provider->name)->implode(' → ') }}
+                Eligible order: {{ collect($eligible)->map(fn ($c, $i) => ($i + 1).' '.$c->route->provider->name)->implode(' → ') }}
+            @endif
+        </p>
+        <p @class(['mt-1 break-words text-sm', 'text-navy-800' => $runnable !== [], 'font-medium text-amber-800' => $runnable === []]) data-preview-runnable="{{ count($runnable) }}">
+            @if ($runnable === [])
+                Runnable now: none. Customers cannot buy this plan until a route can run.
+            @else
+                Runnable now: {{ collect($runnable)->map(fn ($r, $i) => ($i + 1).' '.$r->candidate->route->provider->name)->implode(' → ') }}
             @endif
         </p>
     </section>
@@ -52,6 +60,7 @@
             <ul class="divide-y divide-navy-100" role="list">
                 @foreach ($candidates as $i => $candidate)
                     @php($route = $candidate->route)
+                    @php($ready = $readiness[$i])
                     <li class="space-y-2 px-5 py-4" data-route="{{ $route->provider->code }}" data-priority="{{ $route->priority }}">
                         <div class="flex flex-wrap items-start justify-between gap-3">
                             <div class="min-w-0">
@@ -60,12 +69,13 @@
                             </div>
                             <div class="flex flex-wrap items-center gap-2">
                                 <span @class(['inline-flex rounded-full px-2 py-0.5 text-xs font-semibold', 'bg-green-50 text-green-800' => $candidate->eligible, 'bg-amber-50 text-amber-800' => ! $candidate->eligible]) data-route-eligibility>{{ $candidate->eligible ? 'Eligible' : 'Skipped' }}</span>
+                                <span @class(['inline-flex rounded-full px-2 py-0.5 text-xs font-semibold', 'bg-green-50 text-green-800' => $ready->runnable(), 'bg-amber-50 text-amber-800' => ! $ready->runnable()]) data-route-runnable="{{ $ready->runnable() ? 'yes' : 'no' }}">{{ $ready->runnable() ? 'Runnable' : 'Not runnable' }}</span>
                                 <span @class(['inline-flex rounded-full px-2 py-0.5 text-xs font-semibold', 'bg-green-50 text-green-800' => $route->is_active, 'bg-navy-50 text-navy-700' => ! $route->is_active])>{{ $route->is_active ? 'Active' : 'Disabled' }}</span>
                             </div>
                         </div>
-                        @if (! $candidate->eligible)
+                        @if (! $ready->runnable())
                             <ul class="list-disc pl-5 text-xs text-amber-800" data-route-reasons>
-                                @foreach ($candidate->reasons as $reason)<li class="break-words">{{ $reason }}</li>@endforeach
+                                @foreach ($ready->reasons as $reason)<li class="break-words">{{ $reason }}</li>@endforeach
                             </ul>
                         @endif
                         @if ($canUpdate)

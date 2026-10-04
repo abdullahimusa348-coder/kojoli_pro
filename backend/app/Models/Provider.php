@@ -72,12 +72,18 @@ class Provider extends Model
         )));
     }
 
-    /** @return list<CredentialKey> required keys that have no stored value */
-    public function missingCredentialKeys(): array
+    /**
+     * Keys with no stored value: of the declared required keys, or of $keys
+     * (for example the keys an installed adapter needs). Never reads values.
+     *
+     * @param  list<CredentialKey>|null  $keys
+     * @return list<CredentialKey>
+     */
+    public function missingCredentialKeys(?array $keys = null): array
     {
         $set = $this->credentials->map(fn (ProviderCredential $c) => $c->key)->all();
 
-        return array_values(array_filter($this->requiredCredentialKeys(), fn (CredentialKey $k) => ! in_array($k, $set, true)));
+        return array_values(array_filter($keys ?? $this->requiredCredentialKeys(), fn (CredentialKey $k) => ! in_array($k, $set, true)));
     }
 
     /** Derived: at least one required credential is declared and every declared one is set. */

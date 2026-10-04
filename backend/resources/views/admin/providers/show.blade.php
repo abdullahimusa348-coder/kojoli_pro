@@ -26,6 +26,7 @@
                 <div class="mt-1 flex flex-wrap gap-2">
                     @include('admin.providers.status', ['status' => $provider->status])
                     @include('admin.providers.config-badge', ['provider' => $provider])
+                    @include('admin.providers.adapter-badge', ['installed' => $readiness->installed])
                 </div>
             </div>
             @if ($canUpdate)
@@ -52,7 +53,61 @@
             <div class="sm:col-span-2"><dt class="text-navy-600">Base URL</dt><dd class="mt-0.5 break-all text-navy-900">{{ $provider->baseUrl() ?? '—' }}</dd></div>
             <div class="sm:col-span-2"><dt class="text-navy-600">Description</dt><dd class="mt-0.5 break-words text-navy-900">{{ $provider->description ?: '—' }}</dd></div>
         </dl>
-        <p class="mt-4 text-xs text-navy-500">Configuration only. No provider API is called until provider integrations are built (Phase 10).</p>
+        <p class="mt-4 text-xs text-navy-500">Purchases use this provider only when an adapter is installed for its driver and one of its plan routes can run. Nothing is sent to the provider from this page.</p>
+    </section>
+
+    <section class="{{ $card }}" aria-labelledby="adapter-heading" data-adapter-readiness="{{ $readiness->ready() ? 'ready' : 'not-ready' }}">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+            <h2 id="adapter-heading" class="text-base font-semibold text-navy-900">Adapter readiness</h2>
+            <span @class(['inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-semibold', 'bg-green-50 text-green-800' => $readiness->ready(), 'bg-amber-50 text-amber-800' => ! $readiness->ready()])>{{ $readiness->ready() ? 'Ready' : 'Not ready' }}</span>
+        </div>
+        <p class="mt-0.5 text-sm text-navy-600">The adapter is the code that talks to this provider. It can be used only when it is installed, the credentials it needs are set, and a base URL (if any) is on a host the adapter may call.</p>
+        <dl class="mt-4 grid gap-x-6 gap-y-4 text-sm sm:grid-cols-2">
+            <div>
+                <dt class="text-navy-600">Adapter</dt>
+                <dd class="mt-0.5 break-words text-navy-900" data-adapter-installed="{{ $readiness->installed ? 'yes' : 'no' }}">{{ $readiness->installed ? 'Installed · '.$readiness->label : 'Not installed' }}</dd>
+            </div>
+            <div>
+                <dt class="text-navy-600">Status check with the provider</dt>
+                <dd class="mt-0.5 break-words text-navy-900" data-adapter-query="{{ $readiness->installed ? ($readiness->canQuery ? 'yes' : 'no') : 'none' }}">{{ $readiness->installed ? ($readiness->canQuery ? 'Available' : 'Not available') : '—' }}</dd>
+            </div>
+            <div class="sm:col-span-2">
+                <dt class="text-navy-600">Services the adapter supports</dt>
+                <dd class="mt-0.5 break-words text-navy-900" data-adapter-services>{{ $readiness->installed ? (collect($readiness->services)->map(fn ($slug) => $adapterServiceNames[$slug] ?? $slug)->implode(', ') ?: 'None') : '—' }}</dd>
+            </div>
+            <div class="sm:col-span-2">
+                <dt class="text-navy-600">Credentials the adapter needs</dt>
+                <dd class="mt-1 text-navy-900">
+                    @if (! $readiness->installed)
+                        —
+                    @elseif ($readiness->credentialKeys === [])
+                        None
+                    @else
+                        <ul class="flex flex-wrap gap-2" role="list">
+                            @foreach ($readiness->credentialKeys as $key)
+                                @php($missing = in_array($key, $readiness->missingCredentialKeys, true))
+                                <li @class(['rounded-full px-2 py-0.5 text-xs font-semibold', 'bg-green-50 text-green-800' => ! $missing, 'bg-amber-50 text-amber-800' => $missing]) data-adapter-credential="{{ $key->value }}" data-state="{{ $missing ? 'missing' : 'set' }}">{{ $key->label() }} · {{ $missing ? 'Not set' : 'Set' }}</li>
+                            @endforeach
+                        </ul>
+                    @endif
+                </dd>
+            </div>
+            <div class="sm:col-span-2">
+                <dt class="text-navy-600">Base URL host</dt>
+                <dd class="mt-0.5 break-words text-navy-900" data-adapter-base-url="{{ ! $readiness->installed ? 'none' : match ($readiness->baseUrlAllowed) { true => 'allowed', false => 'not-allowed', null => 'not-set' } }}">
+                    @if (! $readiness->installed)
+                        —
+                    @else
+                        {{ match ($readiness->baseUrlAllowed) { true => 'Allowed for this adapter', false => 'Not allowed for this adapter', null => 'No base URL set' } }}
+                    @endif
+                </dd>
+            </div>
+        </dl>
+        @if ($readiness->problems !== [])
+            <ul class="mt-4 list-disc space-y-0.5 pl-5 text-sm text-amber-800" data-adapter-problems>
+                @foreach ($readiness->problems as $problem)<li class="break-words">{{ $problem }}</li>@endforeach
+            </ul>
+        @endif
     </section>
 
     <section class="{{ $card }}" aria-labelledby="services-heading" data-provider-services>
@@ -71,6 +126,10 @@
                             </div>
                             <div class="flex flex-wrap items-center gap-2">
                                 <span @class(['inline-flex rounded-full px-2 py-0.5 text-xs font-semibold', 'bg-green-50 text-green-800' => $capability->is_active, 'bg-navy-50 text-navy-700' => ! $capability->is_active]) data-capability-status>{{ $capability->is_active ? 'Active' : 'Disabled' }}</span>
+                                @if ($readiness->installed)
+                                    @php($adapterSupports = in_array($capability->service->slug, $readiness->services, true))
+                                    <span @class(['inline-flex rounded-full px-2 py-0.5 text-xs font-semibold', 'bg-green-50 text-green-800' => $adapterSupports, 'bg-amber-50 text-amber-800' => ! $adapterSupports]) data-capability-adapter="{{ $adapterSupports ? 'yes' : 'no' }}">{{ $adapterSupports ? 'Adapter supports it' : 'Adapter does not support it' }}</span>
+                                @endif
                                 @if ($canUpdate)
                                     <form method="POST" action="{{ route('admin.providers.services.status', [$provider, $capability]) }}">
                                         @csrf

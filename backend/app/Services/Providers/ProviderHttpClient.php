@@ -39,12 +39,10 @@ class ProviderHttpClient
     public function send(ProviderCallType $type, string $method, string $url, array $allowedHosts, int $timeoutSeconds,
         array $options = [], bool $retryQuery = false): ProviderHttpResponse
     {
-        $parts = parse_url($url);
-        $host = strtolower($parts['host'] ?? '');
-        if (($parts['scheme'] ?? null) !== 'https' || isset($parts['user']) || isset($parts['pass']) || isset($parts['port'])
-            || ! in_array($host, array_map('strtolower', $allowedHosts), true)) {
+        if (! self::allows($url, $allowedHosts)) {
             throw new ProviderRequestRefused('Refused to call a host the provider adapter has not declared.');
         }
+        $parts = parse_url($url);
 
         $config = config('providers.http');
         $request = Http::connectTimeout($config['connect_timeout'])->timeout(self::timeout($timeoutSeconds))
@@ -79,6 +77,25 @@ class ProviderHttpClient
         }
 
         return $result;
+    }
+
+    /**
+     * The one rule for where an adapter may send requests: https, no login
+     * or port in the URL, and a host the adapter declares (case-insensitive).
+     * Also used by the registry to check a provider's configured base URL.
+     *
+     * @param  list<string>  $allowedHosts
+     */
+    public static function allows(string $url, array $allowedHosts): bool
+    {
+        $parts = parse_url($url);
+        if (! is_array($parts)) {
+            return false;
+        }
+        $host = strtolower($parts['host'] ?? '');
+
+        return ($parts['scheme'] ?? null) === 'https' && ! isset($parts['user']) && ! isset($parts['pass']) && ! isset($parts['port'])
+            && $host !== '' && in_array($host, array_map('strtolower', $allowedHosts), true);
     }
 
     /** The adapter's timeout clamped to the configured range. */

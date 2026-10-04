@@ -8,13 +8,18 @@ use App\Models\Provider;
 use App\Models\ProviderCredential;
 use App\Services\Providers\Contracts\ProviderAdapter;
 use App\Services\Providers\Data\ProviderContext;
+use App\Support\Providers\CredentialKey;
 
 /**
  * Joins provider records with the adapters that exist in code
- * (config('providers.drivers')). A route is executable only when:
+ * (config('providers.drivers')). A route is executable ("runnable" in the
+ * admin area) only when:
  * 1. Phase 7 RouteResolver marks it eligible (unchanged rules), AND
  * 2. its provider's driver has an installed adapter, AND
- * 3. that adapter supports the route's service.
+ * 3. that adapter supports the route's service, AND
+ * 4. every credential the adapter needs is set, AND
+ * 5. a configured base URL is on a host the adapter declares (https, no
+ *    port or login), by the same rule ProviderHttpClient enforces.
  * The executable check is separate from Phase 7 eligibility and never
  * changes it. Production ships with no adapters, so nothing is executable.
  */
@@ -55,14 +60,56 @@ class ProviderAdapterRegistry
 
     public function isExecutable(RouteCandidate $candidate): bool
     {
-        if (! $candidate->eligible) {
-            return false;
-        }
-        $route = $candidate->route->loadMissing('provider', 'plan.product.service');
-        $adapter = $this->adapterFor($route->provider);
-        $slug = $route->plan?->product?->service?->slug;
+        return $this->routeReadiness($candidate)->runnable();
+    }
 
-        return $adapter !== null && $slug !== null && $this->supportsService($adapter, $slug);
+    /**
+     * Whether the provider's adapter can be used now (conditions 2, 4 and 5).
+     * Reads which credentials are set, never their values.
+     */
+    public function providerReadiness(Provider $provider): ProviderReadiness
+    {
+        $adapter = $this->adapterFor($provider);
+        if ($adapter === null) {
+            return new ProviderReadiness(false, null, [], [], [], null, false, [blank($provider->driver)
+                ? 'No driver is set, so no adapter can run this provider.'
+                : "No adapter is installed for driver “{$provider->driver}”."]);
+        }
+
+        $keys = array_values($adapter->credentialKeys());
+        $missing = $provider->loadMissing('credentials')->missingCredentialKeys($keys);
+        $baseUrl = $provider->baseUrl();
+        $baseUrlAllowed = blank($baseUrl) ? null : ProviderHttpClient::allows($baseUrl, $adapter->apiHosts());
+
+        $problems = [];
+        if ($missing !== []) {
+            $problems[] = 'Credentials the adapter needs are not set: '.implode(', ', array_map(fn (CredentialKey $k) => $k->label(), $missing)).'.';
+        }
+        if ($baseUrlAllowed === false) {
+            $problems[] = 'The base URL is not on a host this adapter may call (https only, no port).';
+        }
+
+        return new ProviderReadiness(true, $adapter->label(), array_values($adapter->supportedServices()), $keys, $missing,
+            $baseUrlAllowed, $adapter->canQuery(), $problems);
+    }
+
+    /** Whether purchases can use this route now, with every reason it cannot (conditions 1 to 5). */
+    public function routeReadiness(RouteCandidate $candidate): RouteReadiness
+    {
+        $route = $candidate->route->loadMissing('provider', 'plan.product.service');
+        $reasons = $candidate->reasons;
+        if (! $candidate->eligible && $reasons === []) {
+            $reasons[] = 'Not eligible under the route rules.';
+        }
+
+        $provider = $this->providerReadiness($route->provider);
+        $reasons = [...$reasons, ...$provider->problems];
+        $service = $route->plan?->product?->service;
+        if ($provider->installed && ($service === null || ! in_array($service->slug, $provider->services, true))) {
+            $reasons[] = 'The adapter does not support the '.($service->name ?? 'plan’s').' service.';
+        }
+
+        return new RouteReadiness($candidate, array_values($reasons));
     }
 
     /** @return list<RouteCandidate> executable routes in the order they would be tried */

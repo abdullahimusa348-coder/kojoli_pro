@@ -9,6 +9,7 @@ use App\Models\Plan;
 use App\Models\PlanProviderRoute;
 use App\Models\PlanProviderRouteChange;
 use App\Models\Provider;
+use App\Services\Providers\ProviderAdapterRegistry;
 use App\Services\Providers\RouteCostWarnings;
 use App\Services\Providers\RouteResolver;
 use App\Support\Pricing\BasisPoints;
@@ -19,12 +20,13 @@ use Illuminate\View\View;
 
 /**
  * Provider routes of one plan (Services area): services.view + providers.view;
- * changes need providers.update. Configuration and routing preview only;
- * nothing is sent to any provider.
+ * changes need providers.update. Configuration, routing preview and whether
+ * each route can run now (Phase 7 eligibility plus the provider's adapter);
+ * nothing is sent to any provider from here.
  */
 class PlanRouteController extends Controller
 {
-    public function index(Plan $plan, RouteResolver $resolver): View
+    public function index(Plan $plan, RouteResolver $resolver, ProviderAdapterRegistry $registry): View
     {
         $plan->load('product.service.category', 'activePrices');
         $candidates = $resolver->candidatesFor($plan);
@@ -33,6 +35,7 @@ class PlanRouteController extends Controller
         return view('admin.services.routes.index', [
             'plan' => $plan,
             'candidates' => $candidates,
+            'readiness' => array_map(fn ($candidate) => $registry->routeReadiness($candidate), $candidates),
             'costWarnings' => RouteCostWarnings::for($plan, collect($candidates)->map->route),
             'providers' => Provider::whereHas('services', fn ($q) => $q->where('service_id', $plan->product->service_id)->where('is_active', true))
                 ->whereNotIn('id', $routed)->ordered()->get(),
