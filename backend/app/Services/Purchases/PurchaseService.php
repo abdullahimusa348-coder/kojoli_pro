@@ -8,6 +8,7 @@ use App\Exceptions\Wallet\WalletException;
 use App\Models\Plan;
 use App\Models\Purchase;
 use App\Models\PurchaseAttempt;
+use App\Models\PurchaseIdentityRecipient;
 use App\Models\PurchaseStatusChange;
 use App\Models\SystemUser;
 use App\Models\User;
@@ -20,12 +21,15 @@ use App\Services\Providers\ProviderAdapterRegistry;
 use App\Services\Providers\ProviderCaller;
 use App\Services\Providers\RouteCandidate;
 use App\Services\Wallet\WalletService;
+use App\Support\Catalog\AmountType;
 use App\Support\MaintenanceMode;
 use App\Support\Phone\NigerianPhone;
 use App\Support\Providers\ProviderOutcome;
+use App\Support\Purchases\IdentityHasher;
 use App\Support\Purchases\PurchaseAttemptStatus;
 use App\Support\Purchases\PurchaseSource;
 use App\Support\Purchases\PurchaseStatus;
+use App\Support\Purchases\RecipientType;
 use App\Support\Wallet\LedgerEntryType;
 use App\Support\Wallet\TransactionType;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -50,6 +54,15 @@ use Illuminate\Support\Str;
  * exactly one compensating refund through WalletService (key
  * purchase-refund:{reference}), in the same database transaction.
  *
+ * Recipients (Phase 11): the plan's service decides the recipient type. Phone
+ * purchases (Data, Airtime and every service other than NIN/BVN) work exactly
+ * as in Phase 10. A NIN/BVN purchase needs the customer's consent and a
+ * fixed-price plan; its number is stored only in PurchaseIdentityRecipient
+ * (encrypted, masked, keyed hashes), written in the creation transaction, and
+ * decrypted only to build the provider request (purchases:verify only checks
+ * that it can be read); when it cannot be read, nothing is sent. Exam PIN and
+ * Smile Data are refused until their inputs are defined.
+ *
  * Concurrency: creation locks the wallet row before inserting the purchase
  * (no shared-then-exclusive lock upgrade, so no deadlock between parallel
  * purchases); the purchase row lock serialises attempt creation and result
@@ -67,9 +80,10 @@ class PurchaseService
     ) {}
 
     /** Creates (and debits) a purchase, then executes it. */
-    public function purchase(User $user, Plan $plan, string $recipient, ?int $faceValueKobo, string $idempotencyKey, ?int $confirmedAmountKobo = null): Purchase
+    public function purchase(User $user, Plan $plan, #[\SensitiveParameter] string $recipient, ?int $faceValueKobo, string $idempotencyKey,
+        ?int $confirmedAmountKobo = null, bool $consented = false): Purchase
     {
-        return $this->execute($this->create($user, $plan, $recipient, $faceValueKobo, $idempotencyKey, $confirmedAmountKobo));
+        return $this->execute($this->create($user, $plan, $recipient, $faceValueKobo, $idempotencyKey, $confirmedAmountKobo, $consented));
     }
 
     /**
@@ -81,20 +95,38 @@ class PurchaseService
      * route exists, or the wallet cannot pay. The price is always
      * resolved here on the server; $confirmedAmountKobo (what the customer saw
      * and confirmed) is only compared with it, and a difference is refused.
+     * $recipient is a phone number, or the NIN/BVN for those services, which
+     * also need $consented and a fixed-price plan.
      *
      * @throws PurchaseException
      */
-    public function create(User $user, Plan $plan, string $recipient, ?int $faceValueKobo, string $idempotencyKey, ?int $confirmedAmountKobo = null): Purchase
+    public function create(User $user, Plan $plan, #[\SensitiveParameter] string $recipient, ?int $faceValueKobo, string $idempotencyKey,
+        ?int $confirmedAmountKobo = null, bool $consented = false): Purchase
     {
-        $canonical = NigerianPhone::normalize($recipient) ?? throw new PurchaseException('Enter a valid Nigerian phone number.');
-        $fingerprint = Purchase::fingerprint($plan->id, $canonical, $faceValueKobo);
+        $plan->loadMissing('product.service');
+        $type = RecipientType::forServiceSlug($plan->product->service->slug) ?? throw new PurchaseException('This service is not available yet.');
+        if ($type === RecipientType::Phone) {
+            $canonical = NigerianPhone::normalize($recipient) ?? throw new PurchaseException('Enter a valid Nigerian phone number.');
+            $fingerprints = [Purchase::fingerprint($plan->id, $canonical, $faceValueKobo)];
+        } else {
+            $canonical = $type->normalize($recipient) ?? throw new PurchaseException($type->invalidMessage());
+            $fingerprints = IdentityHasher::keyedFingerprints($plan->id, $type, $canonical, $faceValueKobo); // current app key first
+        }
 
-        if ($existing = $this->existing($user, $idempotencyKey, $fingerprint)) {
+        if ($existing = $this->existing($user, $idempotencyKey, $type, $fingerprints)) {
             return $existing;
         }
         // After the lookup above (a repeated submission still gets its purchase), before any pricing, debit or provider call.
         if (MaintenanceMode::active()) {
             throw new PurchaseException(MaintenanceMode::MESSAGE);
+        }
+        if ($type->isIdentity()) {
+            if (! $consented) {
+                throw new PurchaseException("Your consent is required for a {$type->label()} purchase.");
+            }
+            if ($plan->amount_type !== AmountType::Fixed) {
+                throw new PurchaseException("{$type->label()} plans are sold at a fixed price only.");
+            }
         }
 
         $quote = $this->prices->quoteFor($plan, $user, $faceValueKobo);
@@ -108,11 +140,10 @@ class PurchaseService
             throw new PurchaseException('This plan is not available right now.');
         }
 
-        $plan->loadMissing('product.service');
         $wallet = $this->wallets->walletFor($user);
 
         try {
-            return DB::transaction(function () use ($user, $plan, $wallet, $quote, $canonical, $idempotencyKey, $fingerprint) {
+            return DB::transaction(function () use ($user, $plan, $wallet, $quote, $type, $canonical, $idempotencyKey, $fingerprints) {
                 // Lock the wallet first: inserting the purchase takes a shared lock on the wallet row
                 // (foreign key) and the debit needs an exclusive one; locking it up front makes
                 // parallel purchases on one wallet queue instead of deadlocking.
@@ -130,16 +161,27 @@ class PurchaseService
                     'network' => $plan->product->network,
                     'user_type' => $user->user_type,
                     'amount_type' => $plan->amount_type,
-                    'recipient' => $canonical,
+                    'recipient_type' => $type,
+                    'recipient' => $type === RecipientType::Phone ? $canonical : null,
                     'face_value_kobo' => $quote->faceValueKobo,
                     'discount_kobo' => $quote->discountKobo,
                     'fee_kobo' => $quote->feeKobo,
                     'amount_kobo' => $quote->amountKobo,
                     'status' => PurchaseStatus::Pending,
                     'idempotency_key' => $idempotencyKey,
-                    'request_fingerprint' => $fingerprint,
+                    'request_fingerprint' => $type === RecipientType::Phone ? $fingerprints[0] : null,
                 ]);
                 $purchase->save(); // the unique (customer, key) index stops a parallel duplicate here, before any debit
+                if ($type->isIdentity()) {
+                    (new PurchaseIdentityRecipient)->forceFill([
+                        'purchase_id' => $purchase->id,
+                        'encrypted_value' => $canonical,
+                        'masked_value' => $type->mask($canonical),
+                        'lookup_hash' => IdentityHasher::lookupHash($type, $canonical),
+                        'keyed_fingerprint' => $fingerprints[0],
+                        'consented_at' => now(),
+                    ])->save();
+                }
 
                 $debit = $this->wallets->debit($wallet, $purchase->amount_kobo, LedgerEntryType::PurchaseDebit, TransactionType::Purchase,
                     "{$purchase->service_name}: {$purchase->plan_name}", 'purchase:'.$purchase->reference, null, ['purchase' => $purchase->reference]);
@@ -150,7 +192,7 @@ class PurchaseService
             }, 3);
         } catch (UniqueConstraintViolationException $e) {
             // A parallel request with the same key won the race (its debit is the only one).
-            return $this->existing($user, $idempotencyKey, $fingerprint) ?? throw $e;
+            return $this->existing($user, $idempotencyKey, $type, $fingerprints) ?? throw $e;
         } catch (WalletException $e) {
             throw new PurchaseException($e->getMessage());
         }
@@ -160,9 +202,16 @@ class PurchaseService
      * Tries the executable routes in order. Safe to call repeatedly and in
      * parallel: only a pending purchase whose attempts so far all failed
      * definitely gets a new attempt, one at a time. Returns the current purchase.
+     * The recipient is worked out first: when a NIN/BVN cannot be read, no
+     * attempt is made and nothing is sent (fail closed; it stays pending).
      */
     public function execute(Purchase $purchase): Purchase
     {
+        $recipient = $this->providerRecipient($purchase);
+        if ($recipient === null) {
+            return $purchase->fresh();
+        }
+
         while (true) {
             $next = $this->startNextAttempt($purchase);
             if ($next === null) {
@@ -173,7 +222,7 @@ class PurchaseService
                 return $this->refundAllFailed($purchase); // nothing left to try and nothing was delivered
             }
 
-            $result = $this->call($purchase->fresh(), $attempt, $candidate);
+            $result = $this->call($purchase->fresh(), $attempt, $candidate, $recipient);
             $after = $this->applyResult($purchase, $attempt, $result);
             if ($after->status !== PurchaseStatus::Pending || $result->outcome !== ProviderOutcome::FailedDefinite) {
                 return $after; // succeeded, or unknown: stop (no failover, no refund)
@@ -238,8 +287,25 @@ class PurchaseService
         }, 3);
     }
 
+    /**
+     * What the provider is asked to deliver to: the phone number (Phase 10,
+     * no query), or the NIN/BVN decrypted in memory. Null when it cannot be
+     * read, logged by purchase reference only.
+     */
+    private function providerRecipient(Purchase $purchase): ?string
+    {
+        $recipient = $purchase->recipient_type === RecipientType::Phone
+            ? $purchase->recipient
+            : PurchaseIdentityRecipient::where('purchase_id', $purchase->id)->first()?->number($purchase->recipient_type);
+        if ($recipient === null) {
+            Log::error('Purchase recipient unavailable', ['purchase' => $purchase->reference]);
+        }
+
+        return $recipient;
+    }
+
     /** The provider call, outside any database transaction. */
-    private function call(Purchase $purchase, PurchaseAttempt $attempt, RouteCandidate $candidate): ProviderResult
+    private function call(Purchase $purchase, PurchaseAttempt $attempt, RouteCandidate $candidate, #[\SensitiveParameter] string $recipient): ProviderResult
     {
         $provider = $candidate->route->provider;
         $adapter = $this->registry->adapterFor($provider);
@@ -254,9 +320,10 @@ class PurchaseService
             $purchase->plan->product->service->slug,
             $purchase->network?->value,
             $attempt->provider_plan_code,
-            $purchase->recipient,
+            $recipient,
             $purchase->amount_kobo,
             $purchase->face_value_kobo,
+            $purchase->recipient_type->value,
         ), $context);
     }
 
@@ -542,13 +609,42 @@ class PurchaseService
         ])->save();
     }
 
-    private function existing(User $user, string $key, string $fingerprint): ?Purchase
+    /**
+     * The customer's purchase for this key, if any; it must be the purchase
+     * this request asks for. Never compared across recipient types.
+     * - phone: the stored Phase 10 fingerprint must match (unchanged);
+     * - NIN/BVN: the identity recipient's keyed fingerprint must match one of
+     *   $fingerprints (the request under the current and each previous app key).
+     *
+     * @param  non-empty-list<string>  $fingerprints
+     */
+    private function existing(User $user, string $key, RecipientType $type, array $fingerprints): ?Purchase
     {
         $purchase = Purchase::where('user_id', $user->id)->where('idempotency_key', $key)->first();
-        if ($purchase !== null && ! hash_equals($purchase->request_fingerprint, $fingerprint)) {
+        if ($purchase !== null && ! $this->sameRequest($purchase, $type, $fingerprints)) {
             throw new PurchaseException('This request was already used for a different purchase. Please start again.');
         }
 
         return $purchase;
+    }
+
+    /** @param  non-empty-list<string>  $fingerprints */
+    private function sameRequest(Purchase $purchase, RecipientType $type, array $fingerprints): bool
+    {
+        if ($purchase->recipient_type !== $type) {
+            return false;
+        }
+        if ($type === RecipientType::Phone) {
+            return hash_equals($purchase->request_fingerprint, $fingerprints[0]);
+        }
+
+        $stored = PurchaseIdentityRecipient::where('purchase_id', $purchase->id)->value('keyed_fingerprint');
+        foreach ($fingerprints as $fingerprint) {
+            if ($stored !== null && hash_equals($stored, $fingerprint)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

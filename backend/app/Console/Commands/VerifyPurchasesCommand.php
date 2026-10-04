@@ -5,8 +5,10 @@ namespace App\Console\Commands;
 use App\Models\Purchase;
 use App\Models\Transaction;
 use App\Support\Money;
+use App\Support\Phone\NigerianPhone;
 use App\Support\Purchases\PurchaseAttemptStatus;
 use App\Support\Purchases\PurchaseStatus;
+use App\Support\Purchases\RecipientType;
 use App\Support\Wallet\Direction;
 use App\Support\Wallet\TransactionStatus;
 use App\Support\Wallet\TransactionType;
@@ -18,7 +20,11 @@ use Illuminate\Support\Facades\DB;
  * the purchase money totals, like wallet:verify does for wallets. Reports
  * only: it never changes, re-checks, refunds or settles anything, so it is
  * safe to run at any time and as often as needed. Output names references
- * only, never phone numbers or customers.
+ * only, never phone numbers, NIN/BVN numbers or customers.
+ * Recipients (Phase 11): a phone purchase stores a canonical phone and a
+ * fingerprint and has no identity recipient; a NIN/BVN purchase stores
+ * neither and has its identity recipient, with a masked value, keyed hashes,
+ * a consent time and a number that can still be read (checked yes/no only).
  */
 class VerifyPurchasesCommand extends Command
 {
@@ -53,8 +59,8 @@ class VerifyPurchasesCommand extends Command
 
         Purchase::query()
             ->select(['id', 'reference', 'user_id', 'wallet_id', 'amount_kobo', 'status', 'debit_transaction_id', 'refund_transaction_id',
-                'successful_attempt_id', 'completed_at'])
-            ->with(['debitTransaction', 'refundTransaction', 'successfulAttempt:id,purchase_id,status'])
+                'successful_attempt_id', 'completed_at', 'recipient_type', 'recipient', 'request_fingerprint'])
+            ->with(['debitTransaction', 'refundTransaction', 'successfulAttempt:id,purchase_id,status', 'identityRecipient'])
             ->withCount(['attempts as succeeded_attempts' => fn ($q) => $q->where('status', PurchaseAttemptStatus::Succeeded->value)])
             ->chunkById(200, function ($purchases) use (&$checked, &$problems) {
                 foreach ($purchases as $purchase) {
@@ -110,7 +116,62 @@ class VerifyPurchasesCommand extends Command
             $problems[] = "{$label}: has a completion time but is not final.";
         }
 
+        return [...$problems, ...$this->recipientProblems($label, $purchase)];
+    }
+
+    /**
+     * How the recipient is stored for the purchase's type. Never prints or
+     * returns a phone number or a NIN/BVN.
+     *
+     * @return list<string>
+     */
+    private function recipientProblems(string $label, Purchase $purchase): array
+    {
+        $type = $purchase->recipient_type;
+        $identity = $purchase->identityRecipient;
+        $problems = [];
+
+        if ($type === RecipientType::Phone) {
+            if (! NigerianPhone::isCanonical($purchase->recipient)) {
+                $problems[] = "{$label}: a phone purchase without a canonical phone recipient.";
+            }
+            if (! self::isHash($purchase->request_fingerprint)) {
+                $problems[] = "{$label}: a phone purchase without a request fingerprint.";
+            }
+            if ($identity !== null) {
+                $problems[] = "{$label}: a phone purchase with an identity recipient.";
+            }
+
+            return $problems;
+        }
+
+        if ($purchase->recipient !== null || $purchase->request_fingerprint !== null) {
+            $problems[] = "{$label}: a {$type->label()} purchase that stores a phone recipient or phone fingerprint.";
+        }
+        if ($identity === null) {
+            $problems[] = "{$label}: a {$type->label()} purchase without its identity recipient.";
+
+            return $problems;
+        }
+        if (preg_match('/\A•{7}\d{4}\z/u', (string) $identity->masked_value) !== 1) {
+            $problems[] = "{$label}: its identity recipient's display value is not masked.";
+        }
+        if (! self::isHash($identity->lookup_hash) || ! self::isHash($identity->keyed_fingerprint)) {
+            $problems[] = "{$label}: its identity recipient's lookup hash or fingerprint is not a keyed hash.";
+        }
+        if ($identity->consented_at === null) {
+            $problems[] = "{$label}: its identity recipient has no consent time.";
+        }
+        if (! $identity->isReadable($type)) {
+            $problems[] = "{$label}: its {$type->label()} cannot be read (app key not in APP_PREVIOUS_KEYS, or a damaged value); nothing can be sent to a provider.";
+        }
+
         return $problems;
+    }
+
+    private static function isHash(?string $value): bool
+    {
+        return $value !== null && preg_match('/\A[0-9a-f]{64}\z/', $value) === 1;
     }
 
     /** @return list<string> */

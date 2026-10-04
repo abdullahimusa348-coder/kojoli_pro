@@ -10,6 +10,7 @@ use App\Support\Enums\UserType;
 use App\Support\Phone\NigerianPhone;
 use App\Support\Purchases\PurchaseAttemptStatus;
 use App\Support\Purchases\PurchaseStatus;
+use App\Support\Purchases\RecipientType;
 use App\Support\Wallet\Direction;
 use App\Support\Wallet\TransactionStatus;
 use App\Support\Wallet\TransactionType;
@@ -17,6 +18,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Carbon;
 use InvalidArgumentException;
 use LogicException;
@@ -28,7 +30,10 @@ use LogicException;
  * point to one wallet transaction of this purchase's wallet and are set at
  * most once. Invariants (model guards, plus composite foreign keys where the
  * database can express them):
- * - created pending, with a canonical phone number and its fingerprint;
+ * - created pending, with the recipient type of its service (Phase 11),
+ *   fixed afterwards: a phone purchase stores a canonical phone number and
+ *   its fingerprint; a NIN/BVN purchase stores neither (both NULL) and has
+ *   exactly one PurchaseIdentityRecipient, written in the same transaction;
  * - "successful" and "failed" both require the recorded debit;
  * - "failed" always means refunded (refund recorded in the same save), and
  *   the refund is a purchase credit of the charged amount to the same wallet;
@@ -45,7 +50,7 @@ class Purchase extends Model
 
     private const IMMUTABLE = [
         'reference', 'user_id', 'wallet_id', 'plan_id', 'service_id', 'service_name', 'product_name', 'plan_name', 'network',
-        'user_type', 'amount_type', 'recipient', 'face_value_kobo', 'discount_kobo', 'fee_kobo', 'amount_kobo', 'currency',
+        'user_type', 'amount_type', 'recipient_type', 'recipient', 'face_value_kobo', 'discount_kobo', 'fee_kobo', 'amount_kobo', 'currency',
         'idempotency_key', 'request_fingerprint',
     ];
 
@@ -64,6 +69,7 @@ class Purchase extends Model
             'network' => Network::class,
             'user_type' => UserType::class,
             'amount_type' => AmountType::class,
+            'recipient_type' => RecipientType::class,
             'status' => PurchaseStatus::class,
             'user_id' => 'integer',
             'wallet_id' => 'integer',
@@ -86,6 +92,7 @@ class Purchase extends Model
     /**
      * Fingerprint of the purchase details a request asks for. A repeated
      * idempotency key must carry the same fingerprint, otherwise it is refused.
+     * Phone purchases only; NIN/BVN purchases use IdentityHasher::keyedFingerprint().
      */
     public static function fingerprint(int $planId, string $recipient, ?int $faceValueKobo): string
     {
@@ -117,6 +124,16 @@ class Purchase extends Model
     public function service(): BelongsTo
     {
         return $this->belongsTo(Service::class);
+    }
+
+    /**
+     * The NIN or BVN of a NIN/BVN purchase (none for phone purchases).
+     *
+     * @return HasOne<PurchaseIdentityRecipient, $this>
+     */
+    public function identityRecipient(): HasOne
+    {
+        return $this->hasOne(PurchaseIdentityRecipient::class);
     }
 
     /** @return BelongsTo<Transaction, $this> */
@@ -218,11 +235,20 @@ class Purchase extends Model
             if ($this->status !== PurchaseStatus::Pending) {
                 throw new PurchaseException('A purchase is always created pending.');
             }
-            if (! NigerianPhone::isCanonical($this->recipient)) {
-                throw new PurchaseException('The recipient must be stored in canonical phone format.');
+            $this->recipient_type ??= RecipientType::Phone; // the column default: a purchase created without a type is a phone purchase
+            $slug = Service::whereKey($this->service_id)->value('slug');
+            if ($slug === null || RecipientType::forServiceSlug($slug) !== $this->recipient_type) {
+                throw new PurchaseException('The recipient type must be the one the purchase\'s service uses.');
             }
-            if ($this->request_fingerprint !== self::fingerprint($this->plan_id, $this->recipient, $this->face_value_kobo)) {
-                throw new PurchaseException('The request fingerprint does not match the purchase details.');
+            if ($this->recipient_type === RecipientType::Phone) {
+                if (! NigerianPhone::isCanonical($this->recipient)) {
+                    throw new PurchaseException('The recipient must be stored in canonical phone format.');
+                }
+                if ($this->request_fingerprint !== self::fingerprint($this->plan_id, $this->recipient, $this->face_value_kobo)) {
+                    throw new PurchaseException('The request fingerprint does not match the purchase details.');
+                }
+            } elseif ($this->recipient !== null || $this->request_fingerprint !== null) {
+                throw new PurchaseException('A NIN or BVN purchase stores no phone recipient or phone fingerprint.');
             }
         }
 

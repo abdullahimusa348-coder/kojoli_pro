@@ -99,3 +99,36 @@ Phase 10 delivered Data and Airtime purchasing from the wallet, the provider ada
 - **Proven under concurrency.** The MariaDB suite (`php artisan test -c phpunit.concurrency.xml`, 24 tests) shows no overdraft, no double debit, refund or provider call, exact balances and clean `wallet:verify` / `purchases:verify` while purchases, refunds, credits, re-checks, price changes and wallet freezes race.
 
 Running it in production: a cron entry for `php artisan schedule:run` every minute (purchase re-checks and payment reconciliation every five minutes, daily integrity checks and token pruning); no queue worker is needed for purchases. Before deploying, confirm the stored `app.maintenance_mode` is off, then run `php artisan migrate` and `php artisan db:seed --class=SettingsSeeder`. Before anything can be sold, a provider must be onboarded and prices entered for each plan and customer type.
+
+## NIN, BVN, Exam PIN and Smile Data (Phase 11, in progress)
+- **KYC boundary:** NIN and BVN purchases are digital service purchases paid from the wallet, not KYC onboarding (Phase 13). The NIN or BVN on a purchase is the number the service was bought for. It is never treated as the customer's verified identity, never copied into a customer or KYC record, and KYC must not read it.
+- **CP1 (done): typed purchase recipients.** Engine and database only: no route, controller, page or catalog change (`PurchaseCatalog` still offers Data and Airtime only), no provider.
+  - **Recipient type:** `purchases.recipient_type` (`App\Support\Purchases\RecipientType`) is `phone`, `nin` or `bvn`. The server decides it from the plan's locked service slug (`nin` → nin, `bvn` → bvn, every other service → phone), and it never changes after creation. Exam PIN and Smile Data purchases are refused until their inputs are defined. Every historical purchase reads `phone` from the column default; no row was rewritten.
+  - **Phone purchases** (Data, Airtime and every other service) are unchanged: `recipient` is the canonical phone and `request_fingerprint` the Phase 10 SHA-256 fingerprint, with the same checks, messages, idempotency and flow.
+  - **NIN/BVN purchases** store no phone recipient or phone fingerprint: both columns are NULL, for NIN/BVN only, and whenever `recipient` holds a value it is a canonical phone. The number lives only in `purchase_identity_recipients`: one row per NIN/BVN purchase, written in the creation transaction and never updated or deleted. Its columns:
+    - `encrypted_value`: `encrypted` cast, hidden from serialization;
+    - `masked_value`: `•••••••` and the last four digits, the only form that may be displayed;
+    - `lookup_hash`: HMAC-SHA256 over type and number, for exact-match search;
+    - `keyed_fingerprint`: HMAC-SHA256 over plan, type, number and amount, for repeated requests;
+    - `consented_at`.
+
+    The HMAC keys are derived in memory from the app key (HKDF-SHA256, one fixed label per purpose; nothing in `.env`), and comparisons also try `APP_PREVIOUS_KEYS`.
+  - **`PurchaseService` rules for NIN/BVN:**
+    - **Checks:** the number must be exactly 11 digits (spaces ignored; "Enter a valid 11-digit NIN." / "…BVN."). Consent is required and the plan must be fixed-price, both checked after the duplicate lookup and the maintenance check, before pricing.
+    - **Repeated key:** compared only with a purchase of the same type, using the keyed fingerprint under the current or a previous key. A key already used for another type gets the existing refusal.
+    - **Provider request:** before any attempt, `execute()` works out the recipient (the phone with no query, or the NIN/BVN decrypted in memory) and passes it in `ProviderPurchaseRequest` with the new `recipientType` field (default `phone`). The recipient stays redacted in debug output, and adapters must never copy it into results or logs.
+    - **Unreadable number** (identity row missing, or its key not in `APP_PREVIOUS_KEYS`): nothing is attempted, sent or refunded. The purchase stays pending, is logged by reference only, shows as overdue in monitoring and is reported by `purchases:verify`.
+    - **Untouched:** re-checks, reconciliation and refunds never read the recipient.
+  - **Integrity:**
+    - **Model guards:** the type comes from the service and is fixed; the phone rules are unchanged; NIN/BVN legacy columns must be strictly NULL; an identity row is accepted only once, only for a pending NIN/BVN purchase, with its mask, hashes and consent checked.
+    - **MariaDB CHECK `purchases_recipient_by_type`:** a phone purchase has both a recipient and a fingerprint; any other type has neither. It was validated against every existing row when added.
+    - **`purchases:verify`** also checks recipients. It reports references only, never numbers.
+  - **Rollback and keys:**
+    - **Migrations:** both refuse to roll back while any identity row or non-phone purchase exists, before changing anything. With phone-only data they restore the Phase 10 schema exactly.
+    - **Code:** once NIN/BVN purchases exist, the code must not be rolled back past CP1, because Phase 10 code cannot read them.
+    - **Key rotation:** keep the old app key in `APP_PREVIOUS_KEYS`, as for provider credentials. Without it, NIN/BVN numbers can no longer be read or matched.
+  - **Proven** by feature tests and 4 new MariaDB tests:
+    - historical Phase 10 purchases stay byte-identical through rollback and re-migration, and keep working;
+    - the CHECK holds;
+    - rollback is refused while NIN data exists;
+    - parallel submissions of one NIN confirmation give one purchase, one identity row, one debit and one provider call.
