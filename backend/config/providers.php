@@ -13,8 +13,8 @@ return [
     | (matched against providers.driver). Each class implements
     | App\Services\Providers\Contracts\ProviderAdapter and declares its own
     | endpoints, hosts, credentials and supported services. Phase 10 Step 1
-    | ships with none: real adapters (e.g. Ratel, Bangansuba) are added only
-    | after their official API documentation has been verified.
+    | ships with none: real adapters are added only after their official API
+    | documentation has been verified.
     */
     'drivers' => [],
 
