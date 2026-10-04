@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Exceptions\Purchases\PurchaseException;
+use App\Support\BusinessTime;
 use App\Support\Catalog\AmountType;
 use App\Support\Catalog\Network;
 use App\Support\Enums\UserType;
@@ -12,6 +13,7 @@ use App\Support\Purchases\PurchaseStatus;
 use App\Support\Wallet\Direction;
 use App\Support\Wallet\TransactionStatus;
 use App\Support\Wallet\TransactionType;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -149,6 +151,17 @@ class Purchase extends Model
     public function isFinal(): bool
     {
         return $this->status->isFinal();
+    }
+
+    /**
+     * Purchases that reached their final outcome (successful or failed)
+     * during the current business day (BusinessTime). One definition for
+     * Today's Sales and the matching admin Purchases filter.
+     */
+    public function scopeCompletedToday(Builder $query): void
+    {
+        [$start, $end] = BusinessTime::today();
+        $query->where('completed_at', '>=', $start)->where('completed_at', '<', $end);
     }
 
     private function enforceInvariants(): void

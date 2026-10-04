@@ -240,7 +240,7 @@ describe('transactions module', function () {
 
         $this->get('/admin')->assertSee('Total held in customer wallets')->assertSee('₦1,234.56')
             ->assertSee('data-recent-transaction="', false)->assertSee('Dash Customer')
-            ->assertSee('No data yet: service purchases arrive in Phase 10');
+            ->assertSee('0 successful purchases today (Africa/Lagos)'); // Today's Sales is live since Phase 10 Step 3 CP1
     });
 });
 

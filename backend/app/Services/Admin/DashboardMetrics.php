@@ -2,12 +2,16 @@
 
 namespace App\Services\Admin;
 
+use App\Models\Purchase;
 use App\Models\SystemUser;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Models\Wallet;
 use App\Support\Admin\AdminModule;
+use App\Support\BusinessTime;
 use App\Support\Money;
+use App\Support\Purchases\PurchaseStatus;
+use Illuminate\Support\Str;
 
 /**
  * Figures for the admin dashboard home. Only real data is shown: modules that
@@ -17,7 +21,7 @@ use App\Support\Money;
 class DashboardMetrics
 {
     /**
-     * @return list<array{key: string, label: string, value: string, live: bool, note: string}> cards the staff member may see
+     * @return list<array{key: string, label: string, value: string, live: bool, note: string, url?: string, link?: string}> cards the staff member may see
      */
     public function cardsFor(SystemUser $staff): array
     {
@@ -38,15 +42,51 @@ class DashboardMetrics
                 'live' => true,
                 'note' => 'Total held in customer wallets',
             ],
-            $this->notLive('todays-sales', 'Today’s Sales', AdminModule::Transactions, '0', 'No data yet: service purchases arrive in Phase 10'),
+            [
+                'key' => 'todays-sales',
+                'label' => 'Today’s Sales',
+                'module' => AdminModule::Purchases,
+                // Computed only for staff who may see the card.
+                'resolve' => fn () => $this->todaysSales(),
+            ],
             $this->notLive('todays-revenue', 'Today’s Revenue', AdminModule::Reports, Money::format(0)),
             $this->notLive('pending-withdrawals', 'Pending Withdrawals', AdminModule::Withdrawals, '0'),
         ];
 
         return array_values(array_map(
-            fn (array $card) => array_diff_key($card, ['module' => true]),
+            fn (array $card) => array_diff_key(isset($card['resolve']) ? [...$card, ...($card['resolve'])()] : $card, ['module' => true, 'resolve' => true]),
             array_filter($cards, fn (array $card) => $staff->can($card['module']->permission())),
         ));
+    }
+
+    /**
+     * Purchases that became successful during the current business day
+     * (BusinessTime, default Africa/Lagos): their count and the total charged.
+     * Pending, review and failed purchases are not sales.
+     *
+     * @return array{count: int, total_kobo: int}
+     */
+    public function salesToday(): array
+    {
+        $row = Purchase::query()->where('status', PurchaseStatus::Successful->value)->completedToday()
+            ->selectRaw('COUNT(*) AS sales_count, COALESCE(SUM(amount_kobo), 0) AS sales_total')
+            ->toBase()->first();
+
+        return ['count' => (int) $row->sales_count, 'total_kobo' => (int) $row->sales_total];
+    }
+
+    /** @return array{value: string, live: bool, note: string, url: string, link: string} */
+    private function todaysSales(): array
+    {
+        $sales = $this->salesToday();
+
+        return [
+            'value' => Money::format($sales['total_kobo']),
+            'live' => true,
+            'note' => $sales['count'].' successful '.Str::plural('purchase', $sales['count']).' today ('.BusinessTime::timezone().')',
+            'url' => route('admin.purchases', ['status' => PurchaseStatus::Successful->value, 'completed' => 'today']),
+            'link' => 'View today’s purchases',
+        ];
     }
 
     /** Recent transactions panel is visible only with the Transactions permission. */

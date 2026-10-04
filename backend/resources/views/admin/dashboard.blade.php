@@ -7,17 +7,20 @@
     <p class="text-sm text-navy-700">Welcome back, {{ $staff->name }}.</p>
 
     @if ($cards !== [])
-        <section class="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-5" aria-label="Key figures">
+        <section class="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3" aria-label="Key figures">
             @foreach ($cards as $card)
                 <div class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-navy-100" data-card="{{ $card['key'] }}">
                     <p class="text-sm font-medium text-navy-600">{{ $card['label'] }}</p>
-                    <p @class(['mt-2 text-2xl font-semibold tabular-nums', 'text-navy-900' => $card['live'], 'text-navy-400' => ! $card['live']])>{{ $card['value'] }}</p>
+                    <p @class(['mt-2 break-words text-2xl font-semibold tabular-nums', 'text-navy-900' => $card['live'], 'text-navy-400' => ! $card['live']])>{{ $card['value'] }}</p>
                     <p class="mt-2 text-xs text-navy-500">
                         @unless ($card['live'])
                             <span class="mr-1 inline-block rounded bg-navy-100 px-1.5 py-0.5 font-semibold uppercase tracking-wide text-navy-600">Not live</span>
                         @endunless
                         {{ $card['note'] }}
                     </p>
+                    @if ($card['url'] ?? null)
+                        <a href="{{ $card['url'] }}" class="mt-2 inline-block text-xs font-medium text-brand-700 hover:underline" data-card-link>{{ $card['link'] }}</a>
+                    @endif
                 </div>
             @endforeach
         </section>

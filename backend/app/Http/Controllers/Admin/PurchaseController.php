@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Provider;
 use App\Models\Purchase;
 use App\Models\Service;
+use App\Support\BusinessTime;
 use App\Support\Catalog\Network;
 use App\Support\Phone\NigerianPhone;
 use App\Support\Purchases\PurchaseStatus;
@@ -33,6 +34,8 @@ class PurchaseController extends Controller
             'provider' => ['nullable', 'integer'],
             'from' => ['nullable', 'date'],
             'to' => ['nullable', 'date', 'after_or_equal:from'],
+            // Completed during the current business day: the same window as Today's Sales.
+            'completed' => ['nullable', Rule::in(['today'])],
         ]);
 
         $purchases = Purchase::query()
@@ -52,6 +55,7 @@ class PurchaseController extends Controller
             ->when($filters['provider'] ?? null, fn ($query, $provider) => $query->whereHas('attempts', fn ($a) => $a->where('provider_id', $provider)))
             ->when($filters['from'] ?? null, fn ($query, string $from) => $query->where('created_at', '>=', $from.' 00:00:00'))
             ->when($filters['to'] ?? null, fn ($query, string $to) => $query->where('created_at', '<=', $to.' 23:59:59'))
+            ->when(($filters['completed'] ?? null) === 'today', fn ($query) => $query->completedToday())
             ->latest('id')
             ->paginate(25)
             ->withQueryString();
@@ -64,6 +68,7 @@ class PurchaseController extends Controller
             'services' => Service::whereIn('id', Purchase::select('service_id')->distinct())->orderBy('name')->get(['id', 'name']),
             'providers' => Provider::orderBy('name')->get(['id', 'name']),
             'reviewCount' => Purchase::where('status', PurchaseStatus::Review->value)->count(),
+            'businessTimezone' => BusinessTime::timezone(),
         ]);
     }
 
