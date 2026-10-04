@@ -8,7 +8,9 @@ use App\Services\Providers\Data\ProviderContext;
 use App\Services\Providers\Data\ProviderPurchaseRequest;
 use App\Services\Providers\Data\ProviderQueryRequest;
 use App\Services\Providers\Data\ProviderResult;
+use App\Services\Providers\Data\ProviderResultFields;
 use App\Support\Providers\CredentialKey;
+use Illuminate\Support\Str;
 use RuntimeException;
 
 /**
@@ -16,6 +18,9 @@ use RuntimeException;
  * Each test scripts what the "provider" answers: succeeded, failed_definite,
  * unknown, timeout (no answer) or exception (adapter bug). It makes no HTTP
  * calls and creates no purchases or wallet changes.
+ * Result fields (Phase 11 CP2): by default it answers outcomes only. A test
+ * may script neutral fixture fields (fixtureFields(): keys fixture_1… and
+ * random values, never identity-like data) for its succeeded answers.
  */
 class FakeProvider implements ProviderAdapter
 {
@@ -24,6 +29,9 @@ class FakeProvider implements ProviderAdapter
 
     /** @var list<string> */
     public static array $queryScript = [];
+
+    /** @var list<ProviderResultFields|null> attached in order to succeeded answers (purchase or query); none by default */
+    public static array $resultScript = [];
 
     /** @var list<string> */
     public static array $services = ['data', 'airtime'];
@@ -40,6 +48,7 @@ class FakeProvider implements ProviderAdapter
     {
         self::$purchaseScript = [];
         self::$queryScript = [];
+        self::$resultScript = [];
         self::$services = ['data', 'airtime'];
         self::$queryable = true;
         self::$delayMs = 0;
@@ -106,10 +115,27 @@ class FakeProvider implements ProviderAdapter
         return self::answer(array_shift(self::$queryScript) ?? 'unknown', $request->providerReference ?? 'FPQ-'.$request->requestReference);
     }
 
+    /**
+     * Neutral TEST-ONLY result fields: keys fixture_1… with labels "Fixture 1"…
+     * and random values (or the given ones), generated when the test runs.
+     * Never realistic identity data; never used outside the test suite.
+     *
+     * @param  list<string>  $values
+     */
+    public static function fixtureFields(int $count = 2, array $values = []): ProviderResultFields
+    {
+        $fields = [];
+        for ($i = 1; $i <= $count; $i++) {
+            $fields[] = ['key' => "fixture_{$i}", 'label' => "Fixture {$i}", 'value' => $values[$i - 1] ?? 'FIXTURE-'.Str::upper(Str::random(16))];
+        }
+
+        return new ProviderResultFields($fields);
+    }
+
     private static function answer(string $script, ?string $reference): ProviderResult
     {
         return match ($script) {
-            'succeeded' => ProviderResult::succeeded($reference, 'Delivered.'),
+            'succeeded' => ProviderResult::succeeded($reference, 'Delivered.', array_shift(self::$resultScript)),
             'failed_definite' => ProviderResult::failedDefinite('declined', 'Declined by provider.', $reference),
             'unknown' => ProviderResult::unknown('pending', 'Still processing.', $reference),
             'timeout' => throw new ProviderCallUncertain('The provider could not be reached or did not answer in time.'),

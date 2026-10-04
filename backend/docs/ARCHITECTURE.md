@@ -102,7 +102,7 @@ Running it in production: a cron entry for `php artisan schedule:run` every minu
 
 ## NIN, BVN, Exam PIN and Smile Data (Phase 11, in progress)
 - **KYC boundary:** NIN and BVN purchases are digital service purchases paid from the wallet, not KYC onboarding (Phase 13). The NIN or BVN on a purchase is the number the service was bought for. It is never treated as the customer's verified identity, never copied into a customer or KYC record, and KYC must not read it.
-- **CP1 (done): typed purchase recipients.** Engine and database only: no route, controller, page or catalog change (`PurchaseCatalog` still offers Data and Airtime only), no provider.
+- **CP1 (done, accepted at `cbd1e1e`): typed purchase recipients.** Engine and database only: no route, controller, page or catalog change (`PurchaseCatalog` still offers Data and Airtime only), no provider.
   - **Recipient type:** `purchases.recipient_type` (`App\Support\Purchases\RecipientType`) is `phone`, `nin` or `bvn`. The server decides it from the plan's locked service slug (`nin` → nin, `bvn` → bvn, every other service → phone), and it never changes after creation. Exam PIN and Smile Data purchases are refused until their inputs are defined. Every historical purchase reads `phone` from the column default; no row was rewritten.
   - **Phone purchases** (Data, Airtime and every other service) are unchanged: `recipient` is the canonical phone and `request_fingerprint` the Phase 10 SHA-256 fingerprint, with the same checks, messages, idempotency and flow.
   - **NIN/BVN purchases** store no phone recipient or phone fingerprint: both columns are NULL, for NIN/BVN only, and whenever `recipient` holds a value it is a canonical phone. The number lives only in `purchase_identity_recipients`: one row per NIN/BVN purchase, written in the creation transaction and never updated or deleted. Its columns:
@@ -118,7 +118,7 @@ Running it in production: a cron entry for `php artisan schedule:run` every minu
     - **Repeated key:** compared only with a purchase of the same type, using the keyed fingerprint under the current or a previous key. A key already used for another type gets the existing refusal.
     - **Provider request:** before any attempt, `execute()` works out the recipient (the phone with no query, or the NIN/BVN decrypted in memory) and passes it in `ProviderPurchaseRequest` with the new `recipientType` field (default `phone`). The recipient stays redacted in debug output, and adapters must never copy it into results or logs.
     - **Unreadable number** (identity row missing, or its key not in `APP_PREVIOUS_KEYS`): nothing is attempted, sent or refunded. The purchase stays pending, is logged by reference only, shows as overdue in monitoring and is reported by `purchases:verify`.
-    - **Untouched:** re-checks, reconciliation and refunds never read the recipient.
+    - **Untouched:** re-checks, reconciliation and refunds never send the recipient. Since CP2, a re-check that delivers a NIN/BVN result reads the number in memory, only to mask it in the result.
   - **Integrity:**
     - **Model guards:** the type comes from the service and is fixed; the phone rules are unchanged; NIN/BVN legacy columns must be strictly NULL; an identity row is accepted only once, only for a pending NIN/BVN purchase, with its mask, hashes and consent checked.
     - **MariaDB CHECK `purchases_recipient_by_type`:** a phone purchase has both a recipient and a fingerprint; any other type has neither. It was validated against every existing row when added.
@@ -132,3 +132,41 @@ Running it in production: a cron entry for `php artisan schedule:run` every minu
     - the CHECK holds;
     - rollback is refused while NIN data exists;
     - parallel submissions of one NIN confirmation give one purchase, one identity row, one debit and one provider call.
+- **CP2 (done): NIN/BVN purchase results.** Engine and database only: no route, controller, page or catalog change, no provider (`providers.drivers` stays `[]`), and no retention or deletion yet.
+  - **Result contract:** only a succeeded `ProviderResult` may carry `ProviderResultFields`; failed and unknown outcomes cannot. The adapter maps its provider's documented response into an ordered list of text fields (`key`, `label`, `value`), and the engine defines no field names.
+    - **Limits:** 1 to 50 fields; unique keys matching `^[a-z][a-z0-9_]{0,49}$`; labels of 1 to 100 characters; values up to 1,000; valid UTF-8 without control characters; no media (a `data:` URI or a base64-like run of 200 or more characters).
+    - **Invalid sets:** they throw while the adapter builds them, which `ProviderCaller` turns into `unknown`. They are never stored and never count as a failure.
+    - **Never printable:** debug output, exports, dumps and JSON show only the field count, and the object cannot be serialised or cloned.
+  - **Storage:** `purchase_results`, one row per NIN/BVN purchase (unique `purchase_id`), written once and never updated or deleted. Phone purchases never have one. Its columns:
+    - `purchase_attempt_id`: the delivering attempt; a compound foreign key to the attempt's `(id, purchase_id)` makes it an attempt of the same purchase;
+    - `encrypted_fields`: `encrypted:array` cast, hidden from serialisation;
+    - `field_count`: 1 to 50 (a CHECK on MariaDB), so integrity checks never need the values;
+    - `created_at` only.
+  - **Engine rules:**
+    - **Result required:** a NIN/BVN purchase is successful only with its result. The row is written for the delivering attempt, under the purchase row lock, in the transaction that marks the purchase successful: both happen or neither.
+    - **Result missing:** a succeeded answer without fields becomes `unknown` with error code `result_missing`. It is re-checked on the normal schedule and moves to review after 24 hours. It is never refunded or failed over.
+    - **Number masked:** before storage, the purchased NIN/BVN is replaced by its mask wherever it appears in a label or value, also when written with spaces, dots or dashes. If the number cannot be read, nothing is stored and the purchase stays unclear (`recipient_unavailable`).
+    - **No refund after delivery:** a model guard refuses to refund a purchase that has a result.
+    - **Phone purchases** (Data, Airtime) ignore any result fields, exactly as in Phase 10.
+    - **Concurrency:** no new lock. The purchase row lock, the unique `purchase_id` and the compound foreign key give exactly one result and one success.
+  - **"No record found":** by default a definite failure with a refund. Only the provider's official documentation and an explicit approval can change that for its adapter.
+  - **Visibility:**
+    - Staff never see result values, only that a result exists and its field count.
+    - `PurchaseResult::fields()` is for the buyer's own result page, in a later checkpoint.
+    - **Provider response logs** now also redact keys for birth or date of birth, gender or sex, photo, image, picture, base64, residence, nationality, marital status, religion, tracking, document, slip and serial. They omit any value over 200 characters and mask long numbers sent as JSON numbers. The Phase 9 payment logs are unchanged.
+  - **Integrity:** `purchases:verify` also checks results. A successful NIN/BVN purchase has exactly one, from its delivering attempt, with a valid field count and readable (checked yes/no, never printed); no other purchase has one. It reports references only.
+  - **Rollback and keys:**
+    - **Migration:** refuses to roll back while any result exists, before changing anything.
+    - **Code:** once results exist, the code must not be rolled back past CP2.
+    - **Key rotation:** results are encrypted with the app key, so keep old keys in `APP_PREVIOUS_KEYS`. Without them, results can no longer be read, and `purchases:verify` reports them.
+  - **Adapters:** a NIN/BVN adapter must also pass the separate result contract kit (`tests/Support/Providers/ResultContract.php`), using its provider's documented delivered answer:
+    - a success carries every delivered value;
+    - nothing leaks into messages, provider references, logs or debug output;
+    - media is dropped;
+    - unclear answers stay `unknown`.
+  - **Proven** by feature tests and new MariaDB tests:
+    - parallel executions and re-checks that deliver a result give one result row and one success;
+    - conflicting answers give one outcome, never a result and a refund;
+    - a success without a result stays unclear;
+    - the database constraints hold;
+    - the results table rolls back and forward over historical data, and rollback is refused once a result exists.

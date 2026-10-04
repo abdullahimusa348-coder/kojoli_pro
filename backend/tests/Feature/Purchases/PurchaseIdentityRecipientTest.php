@@ -316,7 +316,9 @@ describe('storage', function () {
         $user = puxCustomer(200_000);
         $numbers = [pirNumber(), pirNumber(), pirNumber(), pirNumber()];
 
+        $fixtures = [FakeProvider::fixtureFields(), FakeProvider::fixtureFields()]; // CP2: a NIN/BVN success needs its result
         FakeProvider::$purchaseScript = ['failed_definite', 'succeeded'];
+        FakeProvider::$resultScript = [$fixtures[0]];
         $delivered = pirBuy($user, $plan, $numbers[0]);
         FakeProvider::$purchaseScript = ['failed_definite', 'failed_definite'];
         $refunded = pirBuy($user, $plan, $numbers[1]);
@@ -326,6 +328,7 @@ describe('storage', function () {
         $reviewed = pirBuy($user, $plan, $numbers[3]);
         $this->travel(3)->minutes();
         FakeProvider::$queryScript = ['succeeded', 'unknown'];
+        FakeProvider::$resultScript = [$fixtures[1]];
         Artisan::call('purchases:reconcile');
         $this->travel(25)->hours();
         FakeProvider::$queryScript = ['unknown'];
@@ -346,6 +349,11 @@ describe('storage', function () {
             expect($dump)->not->toContain($number)
                 ->and(implode("\n", $logs->getArrayCopy()))->not->toContain($number)
                 ->and($verifyOutput)->not->toContain($number);
+        }
+        foreach ([...$fixtures[0]->all(), ...$fixtures[1]->all()] as $field) {
+            expect($dump)->not->toContain($field['value'])
+                ->and(implode("\n", $logs->getArrayCopy()))->not->toContain($field['value'])
+                ->and($verifyOutput)->not->toContain($field['value']);
         }
         pirClean();
     })->with('pir identity types');
@@ -607,6 +615,7 @@ describe('app key rotation', function () {
             ->and(Purchase::count())->toBe(1);
 
         FakeProvider::$purchaseScript = ['succeeded'];
+        FakeProvider::$resultScript = [FakeProvider::fixtureFields()]; // CP2: a NIN/BVN success needs its result
         expect(puxService()->execute($purchase)->status)->toBe(PurchaseStatus::Successful)
             ->and(FakeProvider::$calls[0]->recipient)->toBe($number);
         $later = pirCreate($user, $plan, $number, 'after-rotation');
@@ -661,6 +670,7 @@ describe('provider requests', function () {
         $plan = pirPlan($type);
         $number = pirNumber();
         FakeProvider::$purchaseScript = ['succeeded'];
+        FakeProvider::$resultScript = [FakeProvider::fixtureFields()]; // CP2: a NIN/BVN success needs its result
 
         $purchase = pirBuy(puxCustomer(100_000), $plan, $number);
         $request = FakeProvider::$calls[0];
@@ -737,6 +747,7 @@ describe('NIN and BVN purchases follow the Phase 10 engine', function () {
         $plan = pirPlan($type, routes: 2);
         $user = puxCustomer(100_000);
         FakeProvider::$purchaseScript = ['failed_definite', 'succeeded'];
+        FakeProvider::$resultScript = [FakeProvider::fixtureFields()]; // CP2: a NIN/BVN success needs its result
 
         $purchase = pirBuy($user, $plan, pirNumber());
 
@@ -774,6 +785,7 @@ describe('NIN and BVN purchases follow the Phase 10 engine', function () {
 
         $this->travel(3)->minutes();
         FakeProvider::$queryScript = ['succeeded'];
+        FakeProvider::$resultScript = [FakeProvider::fixtureFields()]; // CP2: a NIN/BVN success needs its result
         Artisan::call('purchases:reconcile');
 
         $purchase->refresh();
@@ -815,6 +827,7 @@ describe('purchases:verify', function () {
         $data = puxPlan('data', 10_000);
         puxRoute($data);
         FakeProvider::$purchaseScript = ['succeeded', 'succeeded', 'failed_definite', 'timeout'];
+        FakeProvider::$resultScript = [null, FakeProvider::fixtureFields()]; // CP2: the phone success as before; the NIN success with its result
         puxService()->purchase($user, $data, '08012345678', null, (string) Str::uuid());
         pirBuy($user, pirPlan(RecipientType::Nin), pirNumber());
         pirBuy($user, pirPlan(RecipientType::Bvn), pirNumber());

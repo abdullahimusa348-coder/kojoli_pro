@@ -27,7 +27,11 @@ use Illuminate\Support\Facades\Log;
  */
 class ProviderHttpClient
 {
-    private const SENSITIVE = '/(authori[sz]ation|secret|token|password|passcode|api[_-]?key|private|signature|pin|cvv|cvc|card|pan|expiry|bvn|nin|phone|msisdn|mobile|recipient|customer|email|name|address|meter|smartcard|iuc|account|beneficiary)/i';
+    private const SENSITIVE = '/(authori[sz]ation|secret|token|password|passcode|api[_-]?key|private|signature|pin|cvv|cvc|card|pan|expiry|bvn|nin|phone|msisdn|mobile|recipient|customer|email|name|address|meter|smartcard|iuc|account|beneficiary'
+        .'|birth|dob|date[_-]?of[_-]?birth|gender|sex|photo|image|picture|base64|residence|nationality|marital|religion|tracking|document|slip|serial)/i';
+
+    /** Logged string values longer than this are omitted (identity results, media or other bulky provider data). */
+    private const MAX_LOGGED_LENGTH = 200;
 
     /**
      * @param  list<string>  $allowedHosts
@@ -107,8 +111,10 @@ class ProviderHttpClient
     }
 
     /**
-     * Recursively masks values whose keys look sensitive, and long digit runs
-     * in any other string value.
+     * Recursively masks values whose keys look sensitive (credentials, contact
+     * details, identity and identity-result data), omits string values longer
+     * than 200 characters, and masks long digit runs in any other value,
+     * whether sent as text or as a JSON number.
      *
      * @param  array<mixed>  $data
      * @return array<mixed>
@@ -121,7 +127,9 @@ class ProviderHttpClient
             } elseif (is_array($value)) {
                 $data[$key] = self::redact($value);
             } elseif (is_string($value)) {
-                $data[$key] = self::maskDigits($value);
+                $data[$key] = mb_strlen($value) > self::MAX_LOGGED_LENGTH ? '[omitted]' : self::maskDigits($value);
+            } elseif ((is_int($value) || is_float($value)) && self::maskDigits((string) $value) !== (string) $value) {
+                $data[$key] = self::maskDigits((string) $value); // a long number sent as a JSON number (e.g. an 11-digit NIN)
             }
         }
 

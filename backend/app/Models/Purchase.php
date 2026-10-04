@@ -34,6 +34,8 @@ use LogicException;
  *   fixed afterwards: a phone purchase stores a canonical phone number and
  *   its fingerprint; a NIN/BVN purchase stores neither (both NULL) and has
  *   exactly one PurchaseIdentityRecipient, written in the same transaction;
+ * - a NIN/BVN purchase is successful only with its PurchaseResult from the
+ *   delivering attempt (Phase 11 CP2), and is never refunded once it has one;
  * - "successful" and "failed" both require the recorded debit;
  * - "failed" always means refunded (refund recorded in the same save), and
  *   the refund is a purchase credit of the charged amount to the same wallet;
@@ -134,6 +136,16 @@ class Purchase extends Model
     public function identityRecipient(): HasOne
     {
         return $this->hasOne(PurchaseIdentityRecipient::class);
+    }
+
+    /**
+     * What the provider delivered for a NIN/BVN purchase (none for phone purchases).
+     *
+     * @return HasOne<PurchaseResult, $this>
+     */
+    public function result(): HasOne
+    {
+        return $this->hasOne(PurchaseResult::class);
     }
 
     /** @return BelongsTo<Transaction, $this> */
@@ -274,6 +286,9 @@ class Purchase extends Model
                 throw new PurchaseException('The refund must be a separate wallet transaction.');
             }
             $this->assertWalletTransaction($this->refund_transaction_id, Direction::Credit, 'refund');
+            if ($this->recipient_type->isIdentity() && PurchaseResult::where('purchase_id', $this->id)->exists()) {
+                throw new PurchaseException('A purchase whose result was delivered is never refunded.');
+            }
         }
         if ($this->isDirty('successful_attempt_id') && $this->successful_attempt_id !== null) {
             $this->assertSuccess();
@@ -302,6 +317,10 @@ class Purchase extends Model
         $margin = $cost === null ? null : $this->amount_kobo - $cost;
         if ($this->cost_kobo !== $cost || $this->margin_kobo !== $margin) {
             throw new PurchaseException('Cost and margin must be the delivering route\'s cost snapshot and the charged amount minus that cost.');
+        }
+        if ($this->recipient_type->isIdentity()
+            && ! PurchaseResult::where('purchase_id', $this->id)->where('purchase_attempt_id', $attempt->id)->exists()) {
+            throw new PurchaseException('A NIN or BVN purchase is successful only with its stored result.');
         }
     }
 }

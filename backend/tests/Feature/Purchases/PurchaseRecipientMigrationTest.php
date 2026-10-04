@@ -25,6 +25,18 @@ require_once __DIR__.'/../../Support/Purchases/helpers.php';
 
 const PRM_CP1 = ['2026_10_04_100000_add_recipient_type_to_purchases', '2026_10_04_100100_create_purchase_identity_recipients_table'];
 
+/** The last Phase 10 migration: the Phase 10 schema is everything up to and including it, whatever later checkpoints add. */
+const PRM_PHASE10_LAST = '2026_10_03_170200_add_purchase_integrity_constraints';
+
+/** Rolls back every migration newer than $last, newest first (nothing when there is none). */
+function prmRollBackAfter(string $last): void
+{
+    $steps = DB::table('migrations')->where('migration', '>', $last)->count();
+    if ($steps > 0) {
+        Artisan::call('migrate:rollback', ['--step' => $steps]);
+    }
+}
+
 /** The table list, and the columns, indexes and foreign keys of the two CP1 tables, as the schema builder reports them. */
 function prmSchema(?string $connection = null): array
 {
@@ -38,11 +50,12 @@ function prmSchema(?string $connection = null): array
     return ['tables' => $tables, 'purchases' => $describe('purchases'), 'purchase_identity_recipients' => $describe('purchase_identity_recipients')];
 }
 
-/** The Phase 10 schema: every migration except CP1's, run on a separate empty in-memory SQLite database. */
+/** The Phase 10 schema: every migration up to the Phase 10 boundary, run on a separate empty in-memory SQLite database. */
 function prmPhase10Schema(): array
 {
     config(['database.connections.prm_phase10' => ['driver' => 'sqlite', 'database' => ':memory:', 'prefix' => '', 'foreign_key_constraints' => true]]);
     $paths = collect(File::files(database_path('migrations')))
+        ->filter(fn ($file) => $file->getFilenameWithoutExtension() <= PRM_PHASE10_LAST)
         ->reject(fn ($file) => in_array($file->getFilenameWithoutExtension(), PRM_CP1, true))
         ->map(fn ($file) => $file->getPathname())->values()->all();
     Artisan::call('migrate', ['--database' => 'prm_phase10', '--path' => $paths, '--realpath' => true]);
@@ -89,10 +102,11 @@ it('rolls back to exactly the Phase 10 schema, and migrates again', function () 
     expect($phase10['purchase_identity_recipients'])->toBeNull()
         ->and(collect($phase10['purchases']['columns'])->pluck('name'))->not->toContain('recipient_type');
 
-    Artisan::call('migrate:rollback', ['--step' => 2]);
+    prmRollBackAfter(PRM_PHASE10_LAST); // CP1 and every later checkpoint, newest first
 
     expect(prmSchema())->toEqual($phase10)
-        ->and(DB::table('migrations')->whereIn('migration', PRM_CP1)->count())->toBe(0);
+        ->and(DB::table('migrations')->whereIn('migration', PRM_CP1)->count())->toBe(0)
+        ->and(DB::table('migrations')->where('migration', '>', PRM_PHASE10_LAST)->count())->toBe(0);
 
     Artisan::call('migrate');
 
@@ -104,6 +118,7 @@ it('refuses to roll back while NIN/BVN data exists, changing nothing it refuses'
     puxDrivers();
     FakeProvider::$services = ['nin'];
     $purchase = puxService()->create(puxCustomer(100_000), prmNinPlan(), (string) random_int(10_000_000_000, 99_999_999_999), null, 'k', null, true);
+    prmRollBackAfter(PRM_CP1[1]); // later checkpoints first (nothing of theirs blocks it here), so CP1's two migrations are the newest
     $before = prmSchema();
 
     expect(fn () => Artisan::call('migrate:rollback', ['--step' => 2]))

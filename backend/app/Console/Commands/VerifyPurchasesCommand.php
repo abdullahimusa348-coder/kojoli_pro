@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\Purchase;
 use App\Models\Transaction;
+use App\Services\Providers\Data\ProviderResultFields;
 use App\Support\Money;
 use App\Support\Phone\NigerianPhone;
 use App\Support\Purchases\PurchaseAttemptStatus;
@@ -25,6 +26,10 @@ use Illuminate\Support\Facades\DB;
  * fingerprint and has no identity recipient; a NIN/BVN purchase stores
  * neither and has its identity recipient, with a masked value, keyed hashes,
  * a consent time and a number that can still be read (checked yes/no only).
+ * Results (Phase 11 CP2): a successful NIN/BVN purchase has exactly one
+ * result, from its delivering attempt, with a valid field count and fields
+ * that can still be read (checked yes/no only, never printed); every other
+ * purchase has none.
  */
 class VerifyPurchasesCommand extends Command
 {
@@ -60,7 +65,7 @@ class VerifyPurchasesCommand extends Command
         Purchase::query()
             ->select(['id', 'reference', 'user_id', 'wallet_id', 'amount_kobo', 'status', 'debit_transaction_id', 'refund_transaction_id',
                 'successful_attempt_id', 'completed_at', 'recipient_type', 'recipient', 'request_fingerprint'])
-            ->with(['debitTransaction', 'refundTransaction', 'successfulAttempt:id,purchase_id,status', 'identityRecipient'])
+            ->with(['debitTransaction', 'refundTransaction', 'successfulAttempt:id,purchase_id,status', 'identityRecipient', 'result'])
             ->withCount(['attempts as succeeded_attempts' => fn ($q) => $q->where('status', PurchaseAttemptStatus::Succeeded->value)])
             ->chunkById(200, function ($purchases) use (&$checked, &$problems) {
                 foreach ($purchases as $purchase) {
@@ -116,7 +121,36 @@ class VerifyPurchasesCommand extends Command
             $problems[] = "{$label}: has a completion time but is not final.";
         }
 
-        return [...$problems, ...$this->recipientProblems($label, $purchase)];
+        return [...$problems, ...$this->recipientProblems($label, $purchase), ...$this->resultProblems($label, $purchase)];
+    }
+
+    /**
+     * The delivered result: only a successful NIN/BVN purchase has one, from
+     * its delivering attempt. Never prints or returns a result value.
+     *
+     * @return list<string>
+     */
+    private function resultProblems(string $label, Purchase $purchase): array
+    {
+        $result = $purchase->result;
+        if ($purchase->status !== PurchaseStatus::Successful || ! $purchase->recipient_type->isIdentity()) {
+            return $result === null ? [] : ["{$label}: has a stored result, but only a successful NIN or BVN purchase has one."];
+        }
+        if ($result === null) {
+            return ["{$label}: a successful {$purchase->recipient_type->label()} purchase without its result."];
+        }
+
+        $problems = [];
+        if ($result->purchase_attempt_id !== $purchase->successful_attempt_id) {
+            $problems[] = "{$label}: its result is not from its delivering attempt.";
+        }
+        if ($result->field_count < 1 || $result->field_count > ProviderResultFields::MAX_FIELDS) {
+            $problems[] = "{$label}: its result has an invalid field count.";
+        } elseif (! $result->canBeRead()) {
+            $problems[] = "{$label}: its result cannot be read (app key not in APP_PREVIOUS_KEYS, or a damaged or miscounted value).";
+        }
+
+        return $problems;
     }
 
     /**

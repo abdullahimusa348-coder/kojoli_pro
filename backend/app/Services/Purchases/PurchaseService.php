@@ -9,6 +9,7 @@ use App\Models\Plan;
 use App\Models\Purchase;
 use App\Models\PurchaseAttempt;
 use App\Models\PurchaseIdentityRecipient;
+use App\Models\PurchaseResult;
 use App\Models\PurchaseStatusChange;
 use App\Models\SystemUser;
 use App\Models\User;
@@ -17,6 +18,7 @@ use App\Services\Pricing\PriceResolver;
 use App\Services\Providers\Data\ProviderPurchaseRequest;
 use App\Services\Providers\Data\ProviderQueryRequest;
 use App\Services\Providers\Data\ProviderResult;
+use App\Services\Providers\Data\ProviderResultFields;
 use App\Services\Providers\ProviderAdapterRegistry;
 use App\Services\Providers\ProviderCaller;
 use App\Services\Providers\RouteCandidate;
@@ -37,6 +39,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use LogicException;
 
 /**
  * The only code that creates and executes purchases (Phase 10).
@@ -62,6 +65,13 @@ use Illuminate\Support\Str;
  * decrypted only to build the provider request (purchases:verify only checks
  * that it can be read); when it cannot be read, nothing is sent. Exam PIN and
  * Smile Data are refused until their inputs are defined.
+ *
+ * Results (Phase 11 CP2): a NIN/BVN purchase succeeds only with the result
+ * fields the provider delivered. A success without them is unclear
+ * (result_missing: re-checked, never refunded or failed over). The result is
+ * stored once, encrypted, with the purchased number replaced by its mask, in
+ * the transaction that marks the purchase successful. Phone purchases ignore
+ * any result fields.
  *
  * Concurrency: creation locks the wallet row before inserting the purchase
  * (no shared-then-exclusive lock upgrade, so no deadlock between parallel
@@ -223,7 +233,7 @@ class PurchaseService
             }
 
             $result = $this->call($purchase->fresh(), $attempt, $candidate, $recipient);
-            $after = $this->applyResult($purchase, $attempt, $result);
+            $after = $this->applyResult($purchase, $attempt, $result, $recipient);
             if ($after->status !== PurchaseStatus::Pending || $result->outcome !== ProviderOutcome::FailedDefinite) {
                 return $after; // succeeded, or unknown: stop (no failover, no refund)
             }
@@ -328,14 +338,15 @@ class PurchaseService
     }
 
     /** Records the provider result on the attempt and, for success, settles the purchase. */
-    private function applyResult(Purchase $purchase, PurchaseAttempt $attempt, ProviderResult $result): Purchase
+    private function applyResult(Purchase $purchase, PurchaseAttempt $attempt, ProviderResult $result, #[\SensitiveParameter] string $recipient): Purchase
     {
-        return DB::transaction(function () use ($purchase, $attempt, $result) {
+        return DB::transaction(function () use ($purchase, $attempt, $result, $recipient) {
             $locked = Purchase::whereKey($purchase->id)->lockForUpdate()->firstOrFail();
             $current = PurchaseAttempt::whereKey($attempt->id)->firstOrFail();
             if ($current->status !== PurchaseAttemptStatus::Started) {
                 return $locked; // already settled elsewhere
             }
+            [$result, $number] = $this->deliverable($locked, $result, $recipient);
 
             $status = match ($result->outcome) {
                 ProviderOutcome::Succeeded => PurchaseAttemptStatus::Succeeded,
@@ -352,7 +363,7 @@ class PurchaseService
             ])->save();
 
             if ($status === PurchaseAttemptStatus::Succeeded && $locked->status === PurchaseStatus::Pending) {
-                return $this->succeedLocked($locked, $current, PurchaseSource::Execution);
+                return $this->succeedLocked($locked, $current, PurchaseSource::Execution, null, $result->fields, $number);
             }
             if ($status === PurchaseAttemptStatus::Unknown) {
                 $locked->forceFill(['next_check_at' => now()->addMinutes(config('purchases.recheck_schedule_minutes')[0])])->save();
@@ -487,11 +498,15 @@ class PurchaseService
                 if ($attempt->provider_reference === null && $result?->providerReference !== null) {
                     $attempt->provider_reference = $result->providerReference;
                 }
+                $number = null;
+                if ($result !== null) {
+                    [$result, $number] = $this->deliverable($locked, $result);
+                }
 
                 if ($result?->outcome === ProviderOutcome::Succeeded) {
                     $attempt->forceFill(['status' => PurchaseAttemptStatus::Succeeded, 'error_code' => null, 'error_message' => null])->save();
 
-                    return $this->succeedLocked($locked, $attempt, $source, $actor);
+                    return $this->succeedLocked($locked, $attempt, $source, $actor, $result->fields, $number);
                 }
                 if ($result?->outcome === ProviderOutcome::FailedDefinite) {
                     $attempt->forceFill(['status' => PurchaseAttemptStatus::FailedDefinite, 'error_code' => $result->errorCode, 'error_message' => $result->message])->save();
@@ -552,9 +567,65 @@ class PurchaseService
         }, 3);
     }
 
-    /** Marks a locked pending/review purchase successful through its delivering attempt, with cost and margin from the route snapshot. */
-    private function succeedLocked(Purchase $locked, PurchaseAttempt $attempt, PurchaseSource $source, ?SystemUser $actor = null): Purchase
+    /**
+     * NIN/BVN purchases: a succeeded answer counts only with its result
+     * fields, and only when the purchased number can be read to take it out
+     * of them; otherwise the answer is unclear (re-checked, never refunded or
+     * failed over). Returns the answer to apply and, for a NIN/BVN success,
+     * the purchased number. Phone purchases: the answer as it is.
+     *
+     * @return array{0: ProviderResult, 1: ?string}
+     */
+    private function deliverable(Purchase $locked, ProviderResult $result, #[\SensitiveParameter] ?string $number = null): array
     {
+        if ($result->outcome !== ProviderOutcome::Succeeded || ! $locked->recipient_type->isIdentity()) {
+            return [$result, null];
+        }
+        if ($result->fields === null) {
+            return [ProviderResult::unknown('result_missing', 'The provider reported success without the result.', $result->providerReference), null];
+        }
+        $number ??= $this->providerRecipient($locked);
+        if ($number === null) {
+            return [ProviderResult::unknown('recipient_unavailable', 'The result was not stored: the purchased number could not be read.', $result->providerReference), null];
+        }
+
+        return [$result, $number];
+    }
+
+    /**
+     * Stores a NIN/BVN purchase's result for its delivering attempt, encrypted,
+     * with the purchased number replaced by its mask wherever it appears (also
+     * written with spaces, dots or dashes), in the caller's transaction.
+     */
+    private function storeResult(Purchase $locked, PurchaseAttempt $attempt, ?ProviderResultFields $fields, #[\SensitiveParameter] ?string $number): void
+    {
+        if ($fields === null || $number === null) {
+            throw new LogicException('A NIN or BVN success needs its result and the purchased number.');
+        }
+        $pattern = '/'.implode('[\s\p{Zs}.\-]?', str_split($number)).'/u';
+        $mask = $locked->recipient_type->mask($number);
+        $stored = array_map(fn (array $field) => ['key' => $field['key'], 'label' => preg_replace($pattern, $mask, $field['label']),
+            'value' => preg_replace($pattern, $mask, $field['value'])], $fields->all());
+
+        (new PurchaseResult)->forceFill([
+            'purchase_id' => $locked->id,
+            'purchase_attempt_id' => $attempt->id,
+            'encrypted_fields' => $stored,
+            'field_count' => count($stored),
+        ])->save();
+    }
+
+    /**
+     * Marks a locked pending/review purchase successful through its delivering
+     * attempt, with cost and margin from the route snapshot; a NIN/BVN
+     * purchase's result is stored first, in the same transaction.
+     */
+    private function succeedLocked(Purchase $locked, PurchaseAttempt $attempt, PurchaseSource $source, ?SystemUser $actor = null,
+        ?ProviderResultFields $fields = null, #[\SensitiveParameter] ?string $number = null): Purchase
+    {
+        if ($locked->recipient_type->isIdentity()) {
+            $this->storeResult($locked, $attempt, $fields, $number);
+        }
         $cost = $attempt->costKobo($locked->face_value_kobo);
 
         return $this->transition($locked, PurchaseStatus::Successful, $source, [

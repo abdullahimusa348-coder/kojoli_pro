@@ -8,6 +8,7 @@ use App\Models\Product;
 use App\Models\Purchase;
 use App\Models\PurchaseAttempt;
 use App\Models\PurchaseIdentityRecipient;
+use App\Models\PurchaseResult;
 use App\Models\Service;
 use App\Models\SystemUser;
 use App\Models\Transaction;
@@ -33,11 +34,24 @@ require_once __DIR__.'/../Support/Purchases/helpers.php';
  * working; the CHECK constraint holds; rollback is refused while a NIN
  * purchase exists; parallel submissions of one NIN confirmation make one
  * purchase. Numbers are generated when the tests run; the test-only
- * FakeProvider returns outcomes only.
+ * FakeProvider returns outcomes only, plus neutral generated fixture result
+ * fields where a NIN purchase must succeed (Phase 11 CP2).
  * Run with: php artisan test -c phpunit.concurrency.xml
  */
 
 const PIT_CP1 = ['2026_10_04_100000_add_recipient_type_to_purchases', '2026_10_04_100100_create_purchase_identity_recipients_table'];
+
+/** The last Phase 10 migration: the Phase 10 schema is everything up to and including it, whatever later checkpoints add. */
+const PIT_PHASE10_LAST = '2026_10_03_170200_add_purchase_integrity_constraints';
+
+/** Rolls back every migration newer than $last, newest first (nothing when there is none). */
+function pitRollBackAfter(string $last): void
+{
+    $steps = DB::table('migrations')->where('migration', '>', $last)->count();
+    if ($steps > 0) {
+        Artisan::call('migrate:rollback', ['--step' => $steps, '--force' => true]);
+    }
+}
 
 beforeEach(function () {
     if (! in_array(DB::connection()->getDriverName(), ['mysql', 'mariadb'], true)) {
@@ -121,6 +135,8 @@ function pitSchema(): array
         'foreign_keys' => collect(Schema::getForeignKeys('purchases'))->sortBy('name')->values()->all(),
         'checks' => pitChecks(),
         'migrations' => DB::table('migrations')->whereIn('migration', PIT_CP1)->orderBy('migration')->pluck('migration')->all(),
+        'results' => Schema::hasTable('purchase_results') ? Schema::getColumns('purchase_results') : null,
+        'later_migrations' => DB::table('migrations')->where('migration', '>', PIT_PHASE10_LAST)->orderBy('migration')->pluck('migration')->all(),
     ];
 }
 
@@ -203,13 +219,15 @@ it('keeps historical Phase 10 purchases identical through rollback and re-migrat
         ->toBe(['review', 'successful', 'successful', 'failed', 'pending', 'pending']);
     $before = pitRows();
 
-    // Back to the Phase 10 schema (allowed: every purchase is a phone purchase); no value changes.
-    Artisan::call('migrate:rollback', ['--step' => 2, '--force' => true]);
+    // Back to the Phase 10 schema (allowed: every purchase is a phone purchase, none has a result); no value changes.
+    pitRollBackAfter(PIT_PHASE10_LAST); // CP1 and every later checkpoint, newest first
     $columns = collect(Schema::getColumns('purchases'))->keyBy('name');
     expect($columns->has('recipient_type'))->toBeFalse()
         ->and($columns['recipient']['nullable'])->toBeFalse()
         ->and($columns['request_fingerprint']['nullable'])->toBeFalse()
         ->and(Schema::hasTable('purchase_identity_recipients'))->toBeFalse()
+        ->and(Schema::hasTable('purchase_results'))->toBeFalse()
+        ->and(DB::table('migrations')->where('migration', '>', PIT_PHASE10_LAST)->count())->toBe(0)
         ->and(pitChecks())->toBe([]);
     $historical = pitRows();
     expect($historical)->toBe(pitWithout($before, 'recipient_type'));
@@ -221,6 +239,8 @@ it('keeps historical Phase 10 purchases identical through rollback and re-migrat
         ->and($after)->toBe($before)
         ->and(collect($after['purchases'])->pluck('recipient_type')->unique()->all())->toBe(['phone'])
         ->and(PurchaseIdentityRecipient::count())->toBe(0)
+        ->and(Schema::hasTable('purchase_results'))->toBeTrue()
+        ->and(PurchaseResult::count())->toBe(0)
         ->and(pitChecks())->toBe(['purchases_recipient_by_type']);
 
     // The Phase 10 flows keep working on them.
@@ -245,7 +265,8 @@ it('keeps historical Phase 10 purchases identical through rollback and re-migrat
         ->and(Transaction::where('type', 'purchase')->where('direction', 'credit')->count())->toBe(2)
         ->and(Wallet::where('user_id', $user->id)->sole()->balance_kobo)->toBe(1_000_000 - 4 * 10_000)
         ->and(DB::table('purchases')->distinct()->pluck('recipient_type')->all())->toBe(['phone'])
-        ->and(PurchaseIdentityRecipient::count())->toBe(0);
+        ->and(PurchaseIdentityRecipient::count())->toBe(0)
+        ->and(PurchaseResult::count())->toBe(0); // phone purchases never have a result
     pitWalletConsistent($user->id);
 });
 
@@ -278,16 +299,30 @@ it('enforces the recipient CHECK in the database for phone and NIN purchases', f
 it('refuses to roll back while a NIN purchase exists, leaving the schema and data unchanged', function () {
     $user = puxCustomer(100_000);
     FakeProvider::$purchaseScript = ['succeeded'];
+    FakeProvider::$resultScript = [FakeProvider::fixtureFields()]; // a NIN success needs its result (Phase 11 CP2)
     $nin = puxService()->purchase($user, pitNinPlan(), pitNumber(), null, 'nin', null, true);
     $schema = pitSchema();
     $rows = pitRows();
+    $results = DB::table('purchase_results')->orderBy('id')->get()->map(fn ($row) => (array) $row)->all();
+    $cp1Only = ['--path' => array_map(fn (string $name) => database_path('migrations/'.$name.'.php'), PIT_CP1), '--realpath' => true];
+    $toPhase10 = DB::table('migrations')->where('migration', '>', PIT_PHASE10_LAST)->count();
 
+    // Rolling back to Phase 10 stops at the newest migration with data: the stored result.
     expect($nin->status)->toBe(PurchaseStatus::Successful)
-        ->and(fn () => Artisan::call('migrate:rollback', ['--step' => 2, '--force' => true]))
+        ->and(PurchaseResult::count())->toBe(1)
+        ->and(fn () => Artisan::call('migrate:rollback', ['--step' => $toPhase10, '--force' => true]))
+        ->toThrow(RuntimeException::class, 'Refusing to roll back: NIN/BVN purchases have stored results, which would be lost. Nothing was changed.');
+    expect(pitSchema())->toBe($schema)
+        ->and(pitRows())->toBe($rows)
+        ->and(DB::table('purchase_results')->orderBy('id')->get()->map(fn ($row) => (array) $row)->all())->toBe($results);
+
+    // The CP1 migrations refuse on their own too (later checkpoints' files left out of the run).
+    expect(fn () => Artisan::call('migrate:rollback', ['--step' => $toPhase10, '--force' => true, ...$cp1Only]))
         ->toThrow(RuntimeException::class, 'Refusing to roll back: NIN/BVN purchases have identity recipients, which would be lost. Nothing was changed.');
     expect(pitSchema())->toBe($schema)
         ->and(pitRows())->toBe($rows)
-        ->and(PurchaseIdentityRecipient::count())->toBe(1);
+        ->and(PurchaseIdentityRecipient::count())->toBe(1)
+        ->and(DB::table('purchase_results')->orderBy('id')->get()->map(fn ($row) => (array) $row)->all())->toBe($results);
 
     // The purchases migration refuses on its own too, before any schema change.
     $migration = require database_path('migrations/'.PIT_CP1[0].'.php');
@@ -317,6 +352,11 @@ it('turns parallel submissions of one NIN confirmation into one purchase, one id
         ->and(Transaction::where('type', 'purchase')->count())->toBe(1)
         ->and(PurchaseAttempt::count())->toBe(1)
         ->and(Wallet::where('user_id', $user->id)->sole()->balance_kobo)->toBe(85_000)
-        ->and(json_encode(DB::table('purchases')->get()))->not->toContain($number);
+        ->and(json_encode(DB::table('purchases')->get()))->not->toContain($number)
+        ->and(PurchaseResult::count())->toBe(1)
+        ->and(PurchaseResult::sole()->purchase_id)->toBe($purchase->id)
+        ->and(PurchaseResult::sole()->purchase_attempt_id)->toBe($purchase->successful_attempt_id)
+        ->and(PurchaseResult::sole()->canBeRead())->toBeTrue()
+        ->and(json_encode(DB::table('purchase_results')->get()))->not->toContain($number);
     pitWalletConsistent($user->id);
 });
