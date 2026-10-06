@@ -99,7 +99,8 @@ it('is off by default and explained in the General settings', function () {
 
     $this->actingAs(mmStaff(), 'admin')->get('/admin/settings')->assertOk()
         ->assertSee('Maintenance mode')
-        ->assertSee('When on, customers cannot start new Data or Airtime purchases. Purchases already in progress, re-checks, refunds and the admin area keep working; wallet funding is not affected.')
+        ->assertSee('When on, customers cannot start any new purchase anywhere in the purchase system, including Data, Airtime, NIN, BVN and Exam PIN. Purchases already in progress, re-checks, refunds and the admin area keep working; wallet funding is not affected.')
+        ->assertDontSee('cannot start new Data or Airtime purchases')
         ->assertDontSee('Not enforced yet');
 });
 

@@ -60,7 +60,7 @@ class SettingDefinitions
                 'type' => SettingType::Boolean,
                 'value' => false,
                 'label' => 'Maintenance mode',
-                'description' => 'When on, customers cannot start new Data or Airtime purchases. Purchases already in progress, re-checks, refunds and the admin area keep working; wallet funding is not affected.',
+                'description' => 'When on, customers cannot start any new purchase anywhere in the purchase system, including Data, Airtime, NIN, BVN and Exam PIN. Purchases already in progress, re-checks, refunds and the admin area keep working; wallet funding is not affected.',
                 'is_public' => true,
             ],
             'pricing.max_amount_kobo' => [
