@@ -35,8 +35,11 @@ use LogicException;
  *   fixed afterwards: a phone purchase stores a canonical phone number and
  *   its fingerprint; a NIN/BVN purchase stores neither (both NULL) and has
  *   exactly one PurchaseIdentityRecipient, written in the same transaction;
- * - a NIN/BVN purchase is successful only with its PurchaseResult from the
- *   delivering attempt (Phase 11 CP2), and is never refunded once it has one;
+ *   an Exam PIN purchase (Phase 11 CP4) stores neither and has no recipient
+ *   at all;
+ * - a NIN/BVN or Exam PIN purchase is successful only with its PurchaseResult
+ *   from the delivering attempt (Phase 11 CP2, CP4), and is never refunded
+ *   once it has one;
  * - "successful" and "failed" both require the recorded debit;
  * - "failed" always means refunded (refund recorded in the same save), and
  *   the refund is a purchase credit of the charged amount to the same wallet;
@@ -95,7 +98,8 @@ class Purchase extends Model
     /**
      * Fingerprint of the purchase details a request asks for. A repeated
      * idempotency key must carry the same fingerprint, otherwise it is refused.
-     * Phone purchases only; NIN/BVN purchases use IdentityHasher::keyedFingerprint().
+     * Phone purchases only; NIN/BVN purchases use IdentityHasher::keyedFingerprint()
+     * and Exam PIN purchases recipientlessFingerprint().
      */
     public static function fingerprint(int $planId, string $recipient, ?int $faceValueKobo): string
     {
@@ -103,6 +107,17 @@ class Purchase extends Model
             ?? throw new InvalidArgumentException('The recipient is not an accepted phone number format.');
 
         return hash('sha256', implode('|', [$planId, $canonical, $faceValueKobo ?? '-']));
+    }
+
+    /**
+     * Fingerprint of an Exam PIN request (Phase 11 CP4): the plan only, as
+     * there is no recipient and no face value. Never stored (the purchase's
+     * request_fingerprint stays NULL): a repeated key is compared by
+     * recomputing it from the purchase's own immutable plan.
+     */
+    public static function recipientlessFingerprint(int $planId): string
+    {
+        return hash('sha256', implode('|', [$planId, RecipientType::None->value, '-']));
     }
 
     /** @return BelongsTo<User, $this> */
@@ -140,7 +155,7 @@ class Purchase extends Model
     }
 
     /**
-     * What the provider delivered for a NIN/BVN purchase (none for phone purchases).
+     * What the provider delivered for a NIN/BVN or Exam PIN purchase (none for phone purchases).
      *
      * @return HasOne<PurchaseResult, $this>
      */
@@ -152,11 +167,16 @@ class Purchase extends Model
     /**
      * The recipient as pages may show it (Phase 11 CP3): the canonical phone of
      * a phone purchase, exactly as before; the masked number of a NIN/BVN
-     * purchase, never the number itself. Lists load the masked values with
+     * purchase, never the number itself; a dash for an Exam PIN purchase,
+     * which has no recipient (CP4). Lists load the masked values with
      * withMaskedRecipients().
      */
     public function displayRecipient(): ?string
     {
+        if ($this->recipient_type === RecipientType::None) {
+            return '—';
+        }
+
         return $this->recipient_type?->isIdentity() ? $this->identityRecipient?->masked_value : $this->recipient;
     }
 
@@ -288,7 +308,9 @@ class Purchase extends Model
                     throw new PurchaseException('The request fingerprint does not match the purchase details.');
                 }
             } elseif ($this->recipient !== null || $this->request_fingerprint !== null) {
-                throw new PurchaseException('A NIN or BVN purchase stores no phone recipient or phone fingerprint.');
+                throw new PurchaseException($this->recipient_type->isIdentity()
+                    ? 'A NIN or BVN purchase stores no phone recipient or phone fingerprint.'
+                    : 'An Exam PIN purchase stores no recipient or fingerprint.');
             }
         }
 
@@ -314,7 +336,7 @@ class Purchase extends Model
                 throw new PurchaseException('The refund must be a separate wallet transaction.');
             }
             $this->assertWalletTransaction($this->refund_transaction_id, Direction::Credit, 'refund');
-            if ($this->recipient_type->isIdentity() && PurchaseResult::where('purchase_id', $this->id)->exists()) {
+            if ($this->recipient_type->requiresResult() && PurchaseResult::where('purchase_id', $this->id)->exists()) {
                 throw new PurchaseException('A purchase whose result was delivered is never refunded.');
             }
         }
@@ -346,9 +368,11 @@ class Purchase extends Model
         if ($this->cost_kobo !== $cost || $this->margin_kobo !== $margin) {
             throw new PurchaseException('Cost and margin must be the delivering route\'s cost snapshot and the charged amount minus that cost.');
         }
-        if ($this->recipient_type->isIdentity()
+        if ($this->recipient_type->requiresResult()
             && ! PurchaseResult::where('purchase_id', $this->id)->where('purchase_attempt_id', $attempt->id)->exists()) {
-            throw new PurchaseException('A NIN or BVN purchase is successful only with its stored result.');
+            throw new PurchaseException($this->recipient_type->isIdentity()
+                ? 'A NIN or BVN purchase is successful only with its stored result.'
+                : 'An Exam PIN purchase is successful only with its stored result.');
         }
     }
 }

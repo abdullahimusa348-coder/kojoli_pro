@@ -1,16 +1,17 @@
 <?php
 
 /*
- * NIN/BVN result concurrency worker (Phase 11 CP2): a separate PHP process
- * (own DB connection) that waits at a start barrier, then executes or
- * re-checks one NIN/BVN purchase through PurchaseService with the test-only
- * FakeProvider, printing one JSON line per call (status only: never a result
- * value or a number). With "fixture", every succeeded answer carries neutral
- * fixture result fields generated when it runs; with "none", none (the
- * provider "forgets" the result). Started only by
- * tests/Concurrency/PurchaseResultTest.php.
+ * Result concurrency worker (Phase 11 CP2 NIN/BVN, CP4 Exam PIN): a separate
+ * PHP process (own DB connection) that waits at a start barrier, then
+ * executes or re-checks one NIN/BVN or Exam PIN purchase through
+ * PurchaseService with the test-only FakeProvider, printing one JSON line per
+ * call (status only: never a result value or a number). With "fixture", every
+ * succeeded answer carries neutral fixture result fields generated when it
+ * runs; with "none", none (the provider "forgets" the result); with "blank",
+ * fields whose values are all blank. Started only by
+ * tests/Concurrency/PurchaseResultTest.php and ExamPinTest.php.
  *
- * Usage: php result_worker.php <barrier> <mode> <staff-id> <purchase-id> <count> <script-csv> <fixture|none> <delay-ms>
+ * Usage: php result_worker.php <barrier> <mode> <staff-id> <purchase-id> <count> <script-csv> <fixture|none|blank> <delay-ms>
  *   mode: execute (purchase id) | reconcile (scheduled re-check run) | recheck (staff re-check of the purchase by staff id)
  *   script: provider answers for purchase calls (execute) or status queries (reconcile/recheck)
  */
@@ -19,6 +20,7 @@ use App\Actions\Admin\Purchases\RecheckPurchase;
 use App\Exceptions\Purchases\PurchaseException;
 use App\Models\Purchase;
 use App\Models\SystemUser;
+use App\Services\Providers\Data\ProviderResultFields;
 use App\Services\Purchases\PurchaseService;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Facades\DB;
@@ -31,7 +33,7 @@ config(['providers.drivers' => ['fake-provider' => FakeProvider::class]]);
 
 [, $barrier, $mode, $staffId, $purchaseId, $count, $script, $results, $delay] = $argv;
 FakeProvider::reset();
-FakeProvider::$services = ['nin', 'bvn'];
+FakeProvider::$services = ['nin', 'bvn', 'exam-pin'];
 FakeProvider::$delayMs = (int) $delay;
 
 DB::connection()->getPdo();
@@ -50,7 +52,11 @@ $service = app(PurchaseService::class);
 for ($i = 0; $i < (int) $count; $i++) {
     $answers = $script === '-' ? [] : explode(',', $script);
     $mode === 'execute' ? FakeProvider::$purchaseScript = $answers : FakeProvider::$queryScript = $answers;
-    FakeProvider::$resultScript = $results === 'fixture' ? array_map(fn () => FakeProvider::fixtureFields(), $answers) : [];
+    FakeProvider::$resultScript = match ($results) {
+        'fixture' => array_map(fn () => FakeProvider::fixtureFields(), $answers),
+        'blank' => array_map(fn () => new ProviderResultFields([['key' => 'fixture_1', 'label' => 'Fixture 1', 'value' => ' ']]), $answers),
+        default => [],
+    };
     try {
         if ($mode === 'reconcile') {
             echo json_encode(['result' => 'ok', 'stats' => $service->reconcile()]), "\n";

@@ -58,20 +58,26 @@ use LogicException;
  * purchase-refund:{reference}), in the same database transaction.
  *
  * Recipients (Phase 11): the plan's service decides the recipient type. Phone
- * purchases (Data, Airtime and every service other than NIN/BVN) work exactly
- * as in Phase 10. A NIN/BVN purchase needs the customer's consent and a
- * fixed-price plan; its number is stored only in PurchaseIdentityRecipient
- * (encrypted, masked, keyed hashes), written in the creation transaction, and
- * decrypted only to build the provider request (purchases:verify only checks
- * that it can be read); when it cannot be read, nothing is sent. Exam PIN and
- * Smile Data are refused until their inputs are defined.
+ * purchases (Data, Airtime and every service other than NIN/BVN/Exam PIN)
+ * work exactly as in Phase 10. A NIN/BVN purchase needs the customer's
+ * consent and a fixed-price plan; its number is stored only in
+ * PurchaseIdentityRecipient (encrypted, masked, keyed hashes), written in the
+ * creation transaction, and decrypted only to build the provider request
+ * (purchases:verify only checks that it can be read); when it cannot be read,
+ * nothing is sent. An Exam PIN purchase (Phase 11 CP4, RecipientType::None)
+ * has no recipient of any kind: any recipient or face value is refused, its
+ * plan must be fixed-price, and the provider is sent an empty recipient with
+ * recipientType "none". Smile Data is refused until its inputs are defined.
  *
- * Results (Phase 11 CP2): a NIN/BVN purchase succeeds only with the result
- * fields the provider delivered. A success without them is unclear
- * (result_missing: re-checked, never refunded or failed over). The result is
- * stored once, encrypted, with the purchased number replaced by its mask, in
- * the transaction that marks the purchase successful. Phone purchases ignore
- * any result fields.
+ * Results (Phase 11 CP2, CP4): a NIN/BVN or Exam PIN purchase succeeds only
+ * with the result fields the provider delivered (for Exam PIN, at least one
+ * of them not blank). A success without them is unclear (result_missing:
+ * re-checked, never refunded or failed over). The result is stored once,
+ * encrypted (a NIN/BVN result with the purchased number replaced by its
+ * mask), in the transaction that marks the purchase successful. An Exam PIN
+ * success whose provider reference repeats a delivered value (such as the
+ * PIN) keeps no provider reference, as staff see references. Phone
+ * purchases ignore any result fields.
  *
  * Concurrency: creation locks the wallet row before inserting the purchase
  * (no shared-then-exclusive lock upgrade, so no deadlock between parallel
@@ -106,7 +112,8 @@ class PurchaseService
      * resolved here on the server; $confirmedAmountKobo (what the customer saw
      * and confirmed) is only compared with it, and a difference is refused.
      * $recipient is a phone number, or the NIN/BVN for those services, which
-     * also need $consented and a fixed-price plan.
+     * also need $consented and a fixed-price plan; for Exam PIN it must be
+     * empty (no recipient), with no face value and a fixed-price plan.
      *
      * @throws PurchaseException
      */
@@ -118,12 +125,22 @@ class PurchaseService
         if ($type === RecipientType::Phone) {
             $canonical = NigerianPhone::normalize($recipient) ?? throw new PurchaseException('Enter a valid Nigerian phone number.');
             $fingerprints = [Purchase::fingerprint($plan->id, $canonical, $faceValueKobo)];
-        } else {
+        } elseif ($type->isIdentity()) {
             $canonical = $type->normalize($recipient) ?? throw new PurchaseException($type->invalidMessage());
             $fingerprints = IdentityHasher::keyedFingerprints($plan->id, $type, $canonical, $faceValueKobo); // current app key first
+        } else {
+            // Exam PIN: no recipient of any kind (no phone, NIN, BVN, email or candidate details) and no amount to choose.
+            if ($recipient !== '') {
+                throw new PurchaseException('This service takes no recipient.');
+            }
+            if ($faceValueKobo !== null) {
+                throw new PurchaseException('This plan is sold at a fixed price only.');
+            }
+            $canonical = '';
+            $fingerprints = [Purchase::recipientlessFingerprint($plan->id)];
         }
 
-        if ($existing = $this->existing($user, $idempotencyKey, $type, $fingerprints)) {
+        if ($existing = $this->existing($user, $idempotencyKey, $type, $fingerprints, $confirmedAmountKobo)) {
             return $existing;
         }
         // After the lookup above (a repeated submission still gets its purchase), before any pricing, debit or provider call.
@@ -137,6 +154,8 @@ class PurchaseService
             if ($plan->amount_type !== AmountType::Fixed) {
                 throw new PurchaseException("{$type->label()} plans are sold at a fixed price only.");
             }
+        } elseif ($type === RecipientType::None && $plan->amount_type !== AmountType::Fixed) {
+            throw new PurchaseException('This plan is sold at a fixed price only.');
         }
 
         $quote = $this->prices->quoteFor($plan, $user, $faceValueKobo);
@@ -202,7 +221,7 @@ class PurchaseService
             }, 3);
         } catch (UniqueConstraintViolationException $e) {
             // A parallel request with the same key won the race (its debit is the only one).
-            return $this->existing($user, $idempotencyKey, $type, $fingerprints) ?? throw $e;
+            return $this->existing($user, $idempotencyKey, $type, $fingerprints, $confirmedAmountKobo) ?? throw $e;
         } catch (WalletException $e) {
             throw new PurchaseException($e->getMessage());
         }
@@ -213,7 +232,8 @@ class PurchaseService
      * parallel: only a pending purchase whose attempts so far all failed
      * definitely gets a new attempt, one at a time. Returns the current purchase.
      * The recipient is worked out first: when a NIN/BVN cannot be read, no
-     * attempt is made and nothing is sent (fail closed; it stays pending).
+     * attempt is made and nothing is sent (fail closed; it stays pending). An
+     * Exam PIN purchase has none: the provider is sent an empty recipient.
      */
     public function execute(Purchase $purchase): Purchase
     {
@@ -299,14 +319,17 @@ class PurchaseService
 
     /**
      * What the provider is asked to deliver to: the phone number (Phase 10,
-     * no query), or the NIN/BVN decrypted in memory. Null when it cannot be
-     * read, logged by purchase reference only.
+     * no query), the NIN/BVN decrypted in memory, or for Exam PIN nothing (an
+     * empty recipient). Null when a phone or NIN/BVN cannot be read, logged by
+     * purchase reference only.
      */
     private function providerRecipient(Purchase $purchase): ?string
     {
-        $recipient = $purchase->recipient_type === RecipientType::Phone
-            ? $purchase->recipient
-            : PurchaseIdentityRecipient::where('purchase_id', $purchase->id)->first()?->number($purchase->recipient_type);
+        $recipient = match ($purchase->recipient_type) {
+            RecipientType::Phone => $purchase->recipient,
+            RecipientType::Nin, RecipientType::Bvn => PurchaseIdentityRecipient::where('purchase_id', $purchase->id)->first()?->number($purchase->recipient_type),
+            RecipientType::None => '',
+        };
         if ($recipient === null) {
             Log::error('Purchase recipient unavailable', ['purchase' => $purchase->reference]);
         }
@@ -495,12 +518,12 @@ class PurchaseService
                 }
 
                 $attempt->forceFill(['last_checked_at' => now()]);
-                if ($attempt->provider_reference === null && $result?->providerReference !== null) {
-                    $attempt->provider_reference = $result->providerReference;
-                }
                 $number = null;
                 if ($result !== null) {
                     [$result, $number] = $this->deliverable($locked, $result);
+                }
+                if ($attempt->provider_reference === null && $result?->providerReference !== null) {
+                    $attempt->provider_reference = $result->providerReference;
                 }
 
                 if ($result?->outcome === ProviderOutcome::Succeeded) {
@@ -568,21 +591,29 @@ class PurchaseService
     }
 
     /**
-     * NIN/BVN purchases: a succeeded answer counts only with its result
-     * fields, and only when the purchased number can be read to take it out
-     * of them; otherwise the answer is unclear (re-checked, never refunded or
-     * failed over). Returns the answer to apply and, for a NIN/BVN success,
-     * the purchased number. Phone purchases: the answer as it is.
+     * Purchases that require a result (NIN, BVN, Exam PIN): a succeeded answer
+     * counts only with its result fields, for Exam PIN only when at least one
+     * delivered value is not blank, and for NIN/BVN only when the purchased
+     * number can be read to take it out of them; otherwise the answer is
+     * unclear (result_missing: re-checked, never refunded or failed over).
+     * An Exam PIN success whose provider reference repeats a delivered value
+     * (such as the PIN) keeps no provider reference: attempts and their
+     * references are shown to staff.
+     * Returns the answer to apply and, for a NIN/BVN success, the purchased
+     * number. Phone purchases: the answer as it is.
      *
      * @return array{0: ProviderResult, 1: ?string}
      */
     private function deliverable(Purchase $locked, ProviderResult $result, #[\SensitiveParameter] ?string $number = null): array
     {
-        if ($result->outcome !== ProviderOutcome::Succeeded || ! $locked->recipient_type->isIdentity()) {
+        if ($result->outcome !== ProviderOutcome::Succeeded || ! $locked->recipient_type->requiresResult()) {
             return [$result, null];
         }
-        if ($result->fields === null) {
+        if ($result->fields === null || (! $locked->recipient_type->isIdentity() && ! PurchaseResult::hasValue($result->fields->all()))) {
             return [ProviderResult::unknown('result_missing', 'The provider reported success without the result.', $result->providerReference), null];
+        }
+        if (! $locked->recipient_type->isIdentity()) {
+            return [$this->withoutRepeatedReference($locked, $result), null]; // Exam PIN: no number to take out of the result
         }
         $number ??= $this->providerRecipient($locked);
         if ($number === null) {
@@ -593,19 +624,44 @@ class PurchaseService
     }
 
     /**
-     * Stores a NIN/BVN purchase's result for its delivering attempt, encrypted,
-     * with the purchased number replaced by its mask wherever it appears (also
-     * written with spaces, dots or dashes), in the caller's transaction.
+     * The Exam PIN success as delivered, or without its provider reference
+     * when that reference contains a delivered value as it is written (such
+     * as the PIN or serial). Logged by purchase reference only.
+     */
+    private function withoutRepeatedReference(Purchase $locked, ProviderResult $result): ProviderResult
+    {
+        $reference = $result->providerReference;
+        $repeats = $reference !== null && collect($result->fields?->all() ?? [])
+            ->map(fn (array $field) => preg_replace('/\A[\p{Z}\p{Cf}]+|[\p{Z}\p{Cf}]+\z/u', '', $field['value']))
+            ->contains(fn (string $value) => $value !== '' && str_contains($reference, $value));
+        if (! $repeats) {
+            return $result;
+        }
+        Log::warning('Provider reference not stored: it repeats a delivered result value', ['purchase' => $locked->reference]);
+
+        return ProviderResult::succeeded(null, $result->message, $result->fields);
+    }
+
+    /**
+     * Stores the result of a purchase that requires one, for its delivering
+     * attempt, encrypted, in the caller's transaction: a NIN/BVN result with
+     * the purchased number replaced by its mask wherever it appears (also
+     * written with spaces, dots or dashes); an Exam PIN result as delivered
+     * (there is no number in it to take out).
      */
     private function storeResult(Purchase $locked, PurchaseAttempt $attempt, ?ProviderResultFields $fields, #[\SensitiveParameter] ?string $number): void
     {
-        if ($fields === null || $number === null) {
-            throw new LogicException('A NIN or BVN success needs its result and the purchased number.');
+        if (! $locked->recipient_type->isIdentity()) {
+            $stored = $fields?->all() ?? throw new LogicException('An Exam PIN success needs its result.');
+        } else {
+            if ($fields === null || $number === null) {
+                throw new LogicException('A NIN or BVN success needs its result and the purchased number.');
+            }
+            $pattern = '/'.implode('[\s\p{Zs}.\-]?', str_split($number)).'/u';
+            $mask = $locked->recipient_type->mask($number);
+            $stored = array_map(fn (array $field) => ['key' => $field['key'], 'label' => preg_replace($pattern, $mask, $field['label']),
+                'value' => preg_replace($pattern, $mask, $field['value'])], $fields->all());
         }
-        $pattern = '/'.implode('[\s\p{Zs}.\-]?', str_split($number)).'/u';
-        $mask = $locked->recipient_type->mask($number);
-        $stored = array_map(fn (array $field) => ['key' => $field['key'], 'label' => preg_replace($pattern, $mask, $field['label']),
-            'value' => preg_replace($pattern, $mask, $field['value'])], $fields->all());
 
         (new PurchaseResult)->forceFill([
             'purchase_id' => $locked->id,
@@ -617,13 +673,14 @@ class PurchaseService
 
     /**
      * Marks a locked pending/review purchase successful through its delivering
-     * attempt, with cost and margin from the route snapshot; a NIN/BVN
-     * purchase's result is stored first, in the same transaction.
+     * attempt, with cost and margin from the route snapshot; the result of a
+     * purchase that requires one (NIN, BVN, Exam PIN) is stored first, in the
+     * same transaction.
      */
     private function succeedLocked(Purchase $locked, PurchaseAttempt $attempt, PurchaseSource $source, ?SystemUser $actor = null,
         ?ProviderResultFields $fields = null, #[\SensitiveParameter] ?string $number = null): Purchase
     {
-        if ($locked->recipient_type->isIdentity()) {
+        if ($locked->recipient_type->requiresResult()) {
             $this->storeResult($locked, $attempt, $fields, $number);
         }
         $cost = $attempt->costKobo($locked->face_value_kobo);
@@ -685,14 +742,17 @@ class PurchaseService
      * this request asks for. Never compared across recipient types.
      * - phone: the stored Phase 10 fingerprint must match (unchanged);
      * - NIN/BVN: the identity recipient's keyed fingerprint must match one of
-     *   $fingerprints (the request under the current and each previous app key).
+     *   $fingerprints (the request under the current and each previous app key);
+     * - Exam PIN: the recipient-less fingerprint of the purchase's own plan
+     *   (nothing is stored) must match, and so must the confirmed amount
+     *   when the request carries one.
      *
      * @param  non-empty-list<string>  $fingerprints
      */
-    private function existing(User $user, string $key, RecipientType $type, array $fingerprints): ?Purchase
+    private function existing(User $user, string $key, RecipientType $type, array $fingerprints, ?int $confirmedAmountKobo = null): ?Purchase
     {
         $purchase = Purchase::where('user_id', $user->id)->where('idempotency_key', $key)->first();
-        if ($purchase !== null && ! $this->sameRequest($purchase, $type, $fingerprints)) {
+        if ($purchase !== null && ! $this->sameRequest($purchase, $type, $fingerprints, $confirmedAmountKobo)) {
             throw new PurchaseException('This request was already used for a different purchase. Please start again.');
         }
 
@@ -700,13 +760,17 @@ class PurchaseService
     }
 
     /** @param  non-empty-list<string>  $fingerprints */
-    private function sameRequest(Purchase $purchase, RecipientType $type, array $fingerprints): bool
+    private function sameRequest(Purchase $purchase, RecipientType $type, array $fingerprints, ?int $confirmedAmountKobo): bool
     {
         if ($purchase->recipient_type !== $type) {
             return false;
         }
         if ($type === RecipientType::Phone) {
             return hash_equals($purchase->request_fingerprint, $fingerprints[0]);
+        }
+        if ($type === RecipientType::None) {
+            return hash_equals(Purchase::recipientlessFingerprint($purchase->plan_id), $fingerprints[0])
+                && ($confirmedAmountKobo === null || $confirmedAmountKobo === $purchase->amount_kobo);
         }
 
         $stored = PurchaseIdentityRecipient::where('purchase_id', $purchase->id)->value('keyed_fingerprint');

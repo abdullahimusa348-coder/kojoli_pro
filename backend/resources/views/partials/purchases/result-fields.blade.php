@@ -1,5 +1,6 @@
-{{-- What the provider delivered for the buyer's own NIN/BVN purchase (Phase 11 CP3): only on the owner's result page,
-     never in lists or on staff pages. Every value is escaped; a result that cannot be read shows only a neutral note. --}}
+{{-- What the provider delivered for the buyer's own NIN/BVN purchase (Phase 11 CP3) or Exam PIN purchase (CP4, such as the PIN
+     and its serial): only on the owner's result page, never in lists or on staff pages. Every value is escaped; a result that
+     cannot be read shows only a neutral note. --}}
 <section class="mt-5 border-t border-navy-100 pt-4" aria-labelledby="result-heading-fields" data-result-section>
     <h2 id="result-heading-fields" class="text-base font-semibold text-navy-900">Your result</h2>
     @if ($fields === null)

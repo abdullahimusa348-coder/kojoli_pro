@@ -47,7 +47,7 @@
                     <li class="flex flex-wrap items-center justify-between gap-2 px-5 py-3 text-sm" data-recent-purchase="{{ $purchase->reference }}">
                         <div class="min-w-0">
                             <a href="{{ route('purchases.show', $purchase->reference) }}" class="block break-words font-medium text-navy-900 hover:text-brand-700">{{ $purchase->service_name }} · {{ $purchase->amount_type === \App\Support\Catalog\AmountType::Variable ? \App\Support\Money::format($purchase->face_value_kobo) : $purchase->plan_name }}</a>
-                            <p class="break-all text-xs text-navy-500">{{ $purchase->network?->label() ?? ($purchase->recipient_type?->isIdentity() ? $purchase->product_name : null) }} · <span class="tabular-nums">{{ $purchase->displayRecipient() }}</span> · {{ $purchase->created_at?->format('j M Y, H:i') }}</p>
+                            <p class="break-all text-xs text-navy-500">{{ $purchase->network?->label() ?? ($purchase->recipient_type?->requiresResult() ? $purchase->product_name : null) }} · <span class="tabular-nums">{{ $purchase->displayRecipient() }}</span> · {{ $purchase->created_at?->format('j M Y, H:i') }}</p>
                         </div>
                         <div class="flex items-center gap-2">
                             @include('partials.purchases.customer-status-badge', ['status' => $purchase->status])

@@ -176,18 +176,18 @@ function pirClean(): void
 }
 
 describe('recipient types', function () {
-    it('maps NIN and BVN to their own types, Exam PIN and Smile Data to none yet, and every other service to phone', function () {
-        expect(array_map(fn (RecipientType $type) => $type->value, RecipientType::cases()))->toBe(['phone', 'nin', 'bvn'])
+    it('maps NIN and BVN to their own types, Exam PIN to none (CP4), Smile Data to no type yet, and every other service to phone', function () {
+        expect(array_map(fn (RecipientType $type) => $type->value, RecipientType::cases()))->toBe(['phone', 'nin', 'bvn', 'none'])
             ->and(RecipientType::forServiceSlug('nin'))->toBe(RecipientType::Nin)
             ->and(RecipientType::forServiceSlug('bvn'))->toBe(RecipientType::Bvn)
-            ->and(RecipientType::forServiceSlug('exam-pin'))->toBeNull()
+            ->and(RecipientType::forServiceSlug('exam-pin'))->toBe(RecipientType::None)
             ->and(RecipientType::forServiceSlug('smile-data'))->toBeNull();
         foreach (['data', 'airtime', 'airtime-to-cash', 'alpha-topup', 'cable-tv', 'electricity', 'bills-payment', 'withdraw', 'referral-and-commission', 'other-service'] as $slug) {
             expect(RecipientType::forServiceSlug($slug))->toBe(RecipientType::Phone);
         }
     });
 
-    it('refuses Exam PIN and Smile Data purchases with no purchase, debit or provider call', function (string $slug) {
+    it('refuses Smile Data purchases with no purchase, debit or provider call', function (string $slug) {
         $plan = puxPlan($slug, 10_000);
         puxRoute($plan);
         $user = puxCustomer(100_000);
@@ -197,7 +197,7 @@ describe('recipient types', function () {
                 ->toBe('This service is not available yet.');
         }
         pirNothingBought($user, 100_000);
-    })->with(['exam-pin', 'smile-data']);
+    })->with(['smile-data']);
 });
 
 describe('NIN and BVN input', function () {

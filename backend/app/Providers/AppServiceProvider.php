@@ -45,6 +45,9 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('identity-store', fn (Request $request) => Limit::perMinute(10)->by((string) ($request->user()?->getAuthIdentifier() ?? $request->ip())));
         // Staff exact-match NIN/BVN search (purchases.view): its own per-staff budget.
         RateLimiter::for('identity-search', fn (Request $request) => Limit::perMinute(20)->by((string) ($request->user('admin')?->getAuthIdentifier() ?? $request->ip())));
+        // Buy Exam PIN (Phase 11 CP4): the same limits on their own budgets, separate from Data/Airtime and NIN/BVN.
+        RateLimiter::for('exam-pin-confirm', fn (Request $request) => Limit::perMinute(30)->by((string) ($request->user()?->getAuthIdentifier() ?? $request->ip())));
+        RateLimiter::for('exam-pin-store', fn (Request $request) => Limit::perMinute(10)->by((string) ($request->user()?->getAuthIdentifier() ?? $request->ip())));
 
         Route::bind('adminRole', fn (string $id) => Role::where('guard_name', 'admin')->findOrFail($id));
     }

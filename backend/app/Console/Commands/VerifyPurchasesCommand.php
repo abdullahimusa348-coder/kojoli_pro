@@ -25,11 +25,12 @@ use Illuminate\Support\Facades\DB;
  * Recipients (Phase 11): a phone purchase stores a canonical phone and a
  * fingerprint and has no identity recipient; a NIN/BVN purchase stores
  * neither and has its identity recipient, with a masked value, keyed hashes,
- * a consent time and a number that can still be read (checked yes/no only).
- * Results (Phase 11 CP2): a successful NIN/BVN purchase has exactly one
- * result, from its delivering attempt, with a valid field count and fields
- * that can still be read (checked yes/no only, never printed); every other
- * purchase has none.
+ * a consent time and a number that can still be read (checked yes/no only);
+ * an Exam PIN purchase (CP4) stores neither and has no identity recipient.
+ * Results (Phase 11 CP2, CP4): a successful NIN/BVN or Exam PIN purchase has
+ * exactly one result, from its delivering attempt, with a valid field count
+ * and fields that can still be read (checked yes/no only, never printed);
+ * every other purchase has none.
  */
 class VerifyPurchasesCommand extends Command
 {
@@ -125,19 +126,21 @@ class VerifyPurchasesCommand extends Command
     }
 
     /**
-     * The delivered result: only a successful NIN/BVN purchase has one, from
-     * its delivering attempt. Never prints or returns a result value.
+     * The delivered result: only a successful NIN/BVN or Exam PIN purchase has
+     * one, from its delivering attempt. Never prints or returns a result value.
      *
      * @return list<string>
      */
     private function resultProblems(string $label, Purchase $purchase): array
     {
         $result = $purchase->result;
-        if ($purchase->status !== PurchaseStatus::Successful || ! $purchase->recipient_type->isIdentity()) {
-            return $result === null ? [] : ["{$label}: has a stored result, but only a successful NIN or BVN purchase has one."];
+        if ($purchase->status !== PurchaseStatus::Successful || ! $purchase->recipient_type->requiresResult()) {
+            return $result === null ? [] : ["{$label}: has a stored result, but only a successful NIN, BVN or Exam PIN purchase has one."];
         }
         if ($result === null) {
-            return ["{$label}: a successful {$purchase->recipient_type->label()} purchase without its result."];
+            $what = $purchase->recipient_type->isIdentity() ? $purchase->recipient_type->label() : 'Exam PIN';
+
+            return ["{$label}: a successful {$what} purchase without its result."];
         }
 
         $problems = [];
@@ -164,6 +167,17 @@ class VerifyPurchasesCommand extends Command
         $type = $purchase->recipient_type;
         $identity = $purchase->identityRecipient;
         $problems = [];
+
+        if ($type === RecipientType::None) {
+            if ($purchase->recipient !== null || $purchase->request_fingerprint !== null) {
+                $problems[] = "{$label}: an Exam PIN purchase that stores a recipient or fingerprint.";
+            }
+            if ($identity !== null) {
+                $problems[] = "{$label}: an Exam PIN purchase with an identity recipient.";
+            }
+
+            return $problems;
+        }
 
         if ($type === RecipientType::Phone) {
             if (! NigerianPhone::isCanonical($purchase->recipient)) {

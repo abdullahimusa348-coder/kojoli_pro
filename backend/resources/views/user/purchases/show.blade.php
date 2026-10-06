@@ -35,7 +35,7 @@
             <div><dt class="text-navy-600">Date</dt><dd class="mt-0.5 text-navy-900">{{ $purchase->created_at?->format('j M Y, H:i') }}</dd></div>
         </dl>
 @if ($showResult)
-        {{-- NIN/BVN only (Phase 11 CP3). The directives start at column 0 so phone purchase pages render exactly as before. --}}
+        {{-- NIN/BVN (Phase 11 CP3) and Exam PIN (CP4) only. The directives start at column 0 so phone purchase pages render exactly as before. --}}
         @include('partials.purchases.result-fields', ['fields' => $resultFields])
 @endif
 

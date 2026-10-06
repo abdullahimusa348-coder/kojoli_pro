@@ -16,9 +16,12 @@ use Illuminate\View\View;
  * No provider, cost, margin or internal error details are shown. A pending
  * purchase's result page reloads itself for its first minutes (see
  * config/purchases.php); the server decides again on every load.
- * NIN/BVN purchases (Phase 11 CP3) show only the masked number. The result of
- * a successful one is decrypted here, for its owner's own result page only
- * (never in lists, never for staff), and that page is sent no-store, private.
+ * NIN/BVN purchases (Phase 11 CP3) show only the masked number; Exam PIN
+ * purchases (CP4) have no recipient and show a dash. The result of a
+ * successful NIN/BVN or Exam PIN purchase (for Exam PIN, such as the PIN and
+ * its serial) is decrypted here, for its owner's own result page only (never
+ * in lists, never for staff), and every result page of these purchases is
+ * sent no-store, private.
  */
 class PurchaseController extends Controller
 {
@@ -44,7 +47,7 @@ class PurchaseController extends Controller
             'showResult' => false,
             'resultFields' => null,
         ];
-        if (! $purchase->recipient_type->isIdentity()) {
+        if (! $purchase->recipient_type->requiresResult()) {
             return view('user.purchases.show', $data); // phone purchases: exactly as before
         }
 

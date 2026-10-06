@@ -13,14 +13,17 @@ use InvalidArgumentException;
 use LogicException;
 
 /**
- * The result a provider delivered for one NIN/BVN purchase (Phase 11 CP2):
- * the text fields of ProviderResultFields, encrypted with the app key, with
- * the purchased NIN/BVN already replaced by its mask. NIN/BVN purchases are
- * digital service purchases, not KYC: this is what the customer bought,
- * never a verified identity of anyone.
+ * The result a provider delivered for one NIN/BVN purchase (Phase 11 CP2) or
+ * Exam PIN purchase (CP4): the text fields of ProviderResultFields, encrypted
+ * with the app key; for NIN/BVN with the purchased number already replaced by
+ * its mask. NIN/BVN purchases are digital service purchases, not KYC: this is
+ * what the customer bought, never a verified identity of anyone. For Exam PIN
+ * it holds what was bought (such as the PIN and its serial), so an Exam PIN
+ * result always has at least one value that is not blank.
  * - Written once, by the purchase engine, in the transaction that marks its
- *   purchase successful: for a NIN/BVN purchase still being settled, from
- *   that purchase's own succeeded delivering attempt. Never updated or deleted.
+ *   purchase successful: for a purchase that requires a result and is still
+ *   being settled, from that purchase's own succeeded delivering attempt.
+ *   Never updated or deleted.
  * - encrypted_fields is never serialised; staff only ever see that a result
  *   exists and its field count. fields() is for the buyer's own result page.
  */
@@ -92,6 +95,24 @@ class PurchaseResult extends Model
         return $this->fields() !== null;
     }
 
+    /**
+     * Whether at least one value holds something other than spaces or
+     * invisible formatting characters: a result whose values are all blank
+     * delivered nothing (Exam PIN, CP4). Answers yes or no only.
+     *
+     * @param  list<array{key: string, label: string, value: string}>  $fields
+     */
+    public static function hasValue(#[\SensitiveParameter] array $fields): bool
+    {
+        foreach ($fields as $field) {
+            if (preg_match('/\A[\p{Z}\p{Cf}]*\z/u', $field['value']) !== 1) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private function enforceInvariants(): void
     {
         if ($this->exists) {
@@ -99,9 +120,9 @@ class PurchaseResult extends Model
         }
 
         $purchase = Purchase::find($this->purchase_id);
-        if ($purchase === null || ! $purchase->recipient_type->isIdentity()
+        if ($purchase === null || ! $purchase->recipient_type->requiresResult()
             || ! in_array($purchase->status, [PurchaseStatus::Pending, PurchaseStatus::Review], true)) {
-            throw new PurchaseException('A result belongs only to a NIN or BVN purchase that is being settled.');
+            throw new PurchaseException('A result belongs only to a NIN, BVN or Exam PIN purchase that is being settled.');
         }
         if (self::where('purchase_id', $purchase->id)->exists()) {
             throw new PurchaseException('This purchase already has its result.');
@@ -110,8 +131,12 @@ class PurchaseResult extends Model
         if ($attempt === null || $attempt->purchase_id !== $purchase->id || $attempt->status !== PurchaseAttemptStatus::Succeeded) {
             throw new PurchaseException('A result is stored only from the purchase\'s own succeeded delivering attempt.');
         }
-        if ($this->fields() === null) {
+        $fields = $this->fields();
+        if ($fields === null) {
             throw new PurchaseException('A result needs valid fields and their exact count.');
+        }
+        if (! $purchase->recipient_type->isIdentity() && ! self::hasValue($fields)) {
+            throw new PurchaseException('An Exam PIN result needs at least one value that is not blank.');
         }
     }
 }

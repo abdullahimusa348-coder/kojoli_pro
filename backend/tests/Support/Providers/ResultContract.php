@@ -20,17 +20,20 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 
 /**
- * Result rules every provider adapter that delivers NIN or BVN results must
- * pass (Phase 11 CP2), on top of AdapterContract, which every adapter passes
- * and which stays unchanged. It knows nothing about any real provider or
- * result format: each adapter's own test supplies the provider's documented
- * "delivered" answer as a closure, and the kit fills it with neutral values
- * generated when it runs (letters only, never identity data) and a generated
- * 11-digit number. Each check returns a list of violations (empty = passes),
- * so a failing test names the rule; the kit itself is tested against a
- * deliberately broken test adapter (ResultProbeProvider).
+ * Result rules every provider adapter that delivers NIN or BVN results (Phase
+ * 11 CP2) or Exam PIN results (CP4, such as the PIN and its serial) must pass,
+ * on top of AdapterContract, which every adapter passes and which stays
+ * unchanged. It knows nothing about any real provider or result format: each
+ * adapter's own test supplies the provider's documented "delivered" answer as
+ * a closure, and the kit fills it with neutral values generated when it runs
+ * (letters only, never identity data or a real PIN format) and, for NIN/BVN, a
+ * generated 11-digit number. An Exam PIN purchase has no recipient: its
+ * request carries the empty recipient with recipientType "none", and the
+ * closure gets an empty number. Each check returns a list of violations
+ * (empty = passes), so a failing test names the rule; the kit itself is tested
+ * against a deliberately broken test adapter (ResultProbeProvider).
  *
- * - deliveryViolations(): for each NIN/BVN service the adapter supports,
+ * - deliveryViolations(): for each result service the adapter supports,
  *   purchase() and, with a status check, query() go through ProviderCaller
  *   (as the purchase engine does) against the delivered answer. They must
  *   come out succeeded with result fields that carry every delivered value
@@ -43,8 +46,9 @@ use Illuminate\Support\Str;
  * - unclearViolations(): answers no provider documents as final come out as
  *   unknown, without result fields, and never echo the purchased number.
  * - productionViolations(): both checks for every adapter registered in
- *   config/providers.php that supports NIN or BVN; such an adapter cannot
- *   pass without its documented delivered answer in the result contract test.
+ *   config/providers.php that supports NIN, BVN or Exam PIN; such an adapter
+ *   cannot pass without its documented delivered answer in the result
+ *   contract test.
  *
  * "No record found" answers are not covered: by default they are a definite
  * failure with a refund, and only the provider's official documentation and
@@ -53,7 +57,12 @@ use Illuminate\Support\Str;
 final class ResultContract
 {
     /** The services whose purchases deliver a result. */
-    public const SERVICES = ['nin', 'bvn'];
+    public const SERVICES = ['nin', 'bvn', 'exam-pin'];
+
+    /** Result services whose purchases have no recipient (Exam PIN): no number is sent or can leak. */
+    private const RECIPIENTLESS = ['exam-pin'];
+
+    private const LABELS = ['nin' => 'NIN', 'bvn' => 'BVN', 'exam-pin' => 'Exam PIN'];
 
     /** A copied piece of media at least this long is detected. */
     private const MEDIA_WINDOW = 32;
@@ -61,8 +70,8 @@ final class ResultContract
     /**
      * $delivered is fn (string $service, string $call, list<string> $values, string $number, ?string $media): the
      * provider's documented delivered answer (an Http::response()) for a "purchase" or "query" call of $service, with
-     * $values where its documentation puts result text, $number where it echoes the purchased number (if it does) and
-     * $media where it puts a photo or document (if it does; null when not asked for).
+     * $values where its documentation puts result text, $number where it echoes the purchased number (if it does; empty
+     * for Exam PIN, which has none) and $media where it puts a photo or document (if it does; null when not asked for).
      *
      * @return list<string>
      */
@@ -74,7 +83,7 @@ final class ResultContract
 
         self::faking(function () use ($adapter, $delivered, &$violations, &$leaks) {
             foreach (self::services($adapter) as $service) {
-                $number = self::number();
+                $number = self::number($service);
                 $values = [self::value(), self::value(), self::value()];
                 $media = 'data:image/jpeg;base64,'.base64_encode(random_bytes(300));
                 $leaks['values'] = [...$leaks['values'], ...$values];
@@ -116,7 +125,7 @@ final class ResultContract
         self::faking(function () use ($adapter, &$violations, &$numbers) {
             foreach (self::unclearAnswers() as $answer => $respond) {
                 foreach (self::services($adapter) as $service) {
-                    $numbers[] = $number = self::number();
+                    $numbers[] = $number = self::number($service);
                     foreach (self::calls($adapter) as $call) {
                         $where = "{$call}() for {$service} on {$answer}";
                         $result = self::run($adapter, $call, $service, $number, $respond);
@@ -144,9 +153,9 @@ final class ResultContract
 
     /**
      * The result policy for adapters registered in config/providers.php: every
-     * adapter that supports NIN or BVN passes both checks with its documented
-     * delivered answer. Other adapters have no result rules (AdapterContract
-     * reports entries that are not adapters).
+     * adapter that supports NIN, BVN or Exam PIN passes both checks with its
+     * documented delivered answer. Other adapters have no result rules
+     * (AdapterContract reports entries that are not adapters).
      *
      * @param  array<mixed>  $drivers  driver => adapter class, as in config('providers.drivers')
      * @param  array<string, Closure>  $deliveredAnswers  driver => its delivered answer (see deliveryViolations())
@@ -156,11 +165,12 @@ final class ResultContract
     {
         $violations = [];
         foreach ($drivers as $driver => $class) {
-            if (! is_string($class) || ! is_subclass_of($class, ProviderAdapter::class) || self::services($adapter = app($class)) === []) {
+            if (! is_string($class) || ! is_subclass_of($class, ProviderAdapter::class) || ($services = self::services($adapter = app($class))) === []) {
                 continue;
             }
             if (! isset($deliveredAnswers[$driver])) {
-                $violations[] = "{$driver}: delivers NIN/BVN results, but the result contract test has no documented delivered answer for it.";
+                $what = implode('/', array_map(fn (string $service) => self::LABELS[$service], $services));
+                $violations[] = "{$driver}: delivers {$what} results, but the result contract test has no documented delivered answer for it.";
 
                 continue;
             }
@@ -224,8 +234,8 @@ final class ResultContract
             array_fill_keys(array_map(fn ($key) => $key->value, $adapter->credentialKeys()), 'result-kit-credential'), app(ProviderHttpClient::class));
 
         return $call === 'purchase'
-            ? app(ProviderCaller::class)->purchase($adapter,
-                new ProviderPurchaseRequest($reference, $service, null, 'RESULT-KIT-PLAN', $number, 15_000, null, $service), $context)
+            ? app(ProviderCaller::class)->purchase($adapter, new ProviderPurchaseRequest($reference, $service, null, 'RESULT-KIT-PLAN', $number, 15_000, null,
+                in_array($service, self::RECIPIENTLESS, true) ? 'none' : $service), $context)
             : app(ProviderCaller::class)->query($adapter, new ProviderQueryRequest($reference, 'RESULT-KIT-REF', $service), $context);
     }
 
@@ -243,7 +253,7 @@ final class ResultContract
         }
     }
 
-    /** @return list<string> the NIN/BVN services the adapter supports */
+    /** @return list<string> the result services (NIN, BVN, Exam PIN) the adapter supports */
     private static function services(ProviderAdapter $adapter): array
     {
         return array_values(array_intersect(self::SERVICES, array_filter($adapter->supportedServices(), 'is_string')));
@@ -290,10 +300,10 @@ final class ResultContract
         return 'resultkit'.Str::lower(Str::password(14, numbers: false, symbols: false));
     }
 
-    /** A generated 11-digit number (starts 1-9, so it never looks like a phone). */
-    private static function number(): string
+    /** A generated 11-digit number (starts 1-9, so it never looks like a phone); empty for a service without a recipient (Exam PIN). */
+    private static function number(string $service): string
     {
-        return (string) random_int(10_000_000_000, 99_999_999_999);
+        return in_array($service, self::RECIPIENTLESS, true) ? '' : (string) random_int(10_000_000_000, 99_999_999_999);
     }
 
     /** @param  list<string>  $needles */
@@ -302,10 +312,10 @@ final class ResultContract
         return array_filter($needles, fn (string $needle) => str_contains($text, $needle)) !== [];
     }
 
-    /** The number in $text, also with up to three other characters between its digits (spaced, dashed, dotted or escaped). */
+    /** The number in $text, also with up to three other characters between its digits (spaced, dashed, dotted or escaped); never for no number. */
     private static function containsNumber(string $text, string $number): bool
     {
-        return preg_match('/'.implode('\D{0,3}', str_split($number)).'/', $text) === 1;
+        return $number !== '' && preg_match('/'.implode('\D{0,3}', str_split($number)).'/', $text) === 1;
     }
 
     /** Any copied piece of the media payload (MEDIA_WINDOW characters or more) in $text. */

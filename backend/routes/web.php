@@ -30,6 +30,7 @@ use App\Http\Controllers\Auth\PasswordResetLinkController;
 use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\User\BuyController;
 use App\Http\Controllers\User\DashboardController;
+use App\Http\Controllers\User\ExamPinBuyController;
 use App\Http\Controllers\User\FundWalletController;
 use App\Http\Controllers\User\IdentityBuyController;
 use App\Http\Controllers\User\PasswordController;
@@ -108,6 +109,12 @@ Route::middleware(['auth:web', 'auth.session'])->group(function () {
             Route::post("buy/{$identity}", [IdentityBuyController::class, 'store'])->defaults('service', $identity)
                 ->middleware('throttle:identity-store')->name("buy.{$identity}.store");
         }
+        // Buy Exam PIN (Phase 11 CP4): literal routes with their own rate limits. Fixed-price plans only and nothing to
+        // enter: the purchase has no recipient. The confirmation is encrypted and bound to the customer.
+        Route::get('buy/exam-pin', [ExamPinBuyController::class, 'create'])->name('buy.exam-pin');
+        Route::post('buy/exam-pin/confirm', [ExamPinBuyController::class, 'confirm'])->middleware('throttle:exam-pin-confirm')
+            ->name('buy.exam-pin.confirm');
+        Route::post('buy/exam-pin', [ExamPinBuyController::class, 'store'])->middleware('throttle:exam-pin-store')->name('buy.exam-pin.store');
         Route::get('purchases', [CustomerPurchaseController::class, 'index'])->name('purchases');
         Route::get('purchases/{reference}', [CustomerPurchaseController::class, 'show'])->where('reference', 'PUR-[0-9A-Z]{26}')->name('purchases.show');
     });

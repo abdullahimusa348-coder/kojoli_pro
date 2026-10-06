@@ -601,8 +601,8 @@ describe('model guards', function () {
         DB::table('purchase_attempts')->whereIn('id', [$ninAttempt->id, $bvnAttempt->id])->update(['status' => 'succeeded']); // as inside a success transaction
 
         expect(prtRefusal(fn () => $store($nin, $bvnAttempt->id, $fields)))->toBe("A result is stored only from the purchase's own succeeded delivering attempt.")
-            ->and(prtRefusal(fn () => $store($phone, $phone->successful_attempt_id, $fields)))->toBe('A result belongs only to a NIN or BVN purchase that is being settled.')
-            ->and(prtRefusal(fn () => $store($failed, $failed->attempts()->first()->id, $fields)))->toBe('A result belongs only to a NIN or BVN purchase that is being settled.')
+            ->and(prtRefusal(fn () => $store($phone, $phone->successful_attempt_id, $fields)))->toBe('A result belongs only to a NIN, BVN or Exam PIN purchase that is being settled.')
+            ->and(prtRefusal(fn () => $store($failed, $failed->attempts()->first()->id, $fields)))->toBe('A result belongs only to a NIN, BVN or Exam PIN purchase that is being settled.')
             ->and(prtRefusal(fn () => $store($nin, $ninAttempt->id, $fields, 3)))->toBe('A result needs valid fields and their exact count.')
             ->and(prtRefusal(fn () => $store($nin, $ninAttempt->id, [['key' => 'Fixture', 'label' => 'Fixture', 'value' => 'x']])))
             ->toBe('A result needs valid fields and their exact count.')
@@ -757,11 +757,11 @@ describe('purchases:verify', function () {
         'successful NIN without its result' => ['successful', fn (array $p) => DB::table('purchase_results')->delete(),
             'a successful NIN purchase without its result.'],
         'result on a phone purchase' => ['phone', fn (array $p) => prtInsertResult($p['phone'], $p['phone']->successful_attempt_id),
-            'has a stored result, but only a successful NIN or BVN purchase has one.'],
+            'has a stored result, but only a successful NIN, BVN or Exam PIN purchase has one.'],
         'result on a pending purchase' => ['pending', fn (array $p) => prtInsertResult($p['pending'], $p['pending']->attempts()->sole()->id),
-            'has a stored result, but only a successful NIN or BVN purchase has one.'],
+            'has a stored result, but only a successful NIN, BVN or Exam PIN purchase has one.'],
         'result on a failed purchase' => ['failed', fn (array $p) => prtInsertResult($p['failed'], $p['failed']->attempts()->first()->id),
-            'has a stored result, but only a successful NIN or BVN purchase has one.'],
+            'has a stored result, but only a successful NIN, BVN or Exam PIN purchase has one.'],
         'result from another attempt' => ['successful', fn (array $p) => DB::table('purchase_results')
             ->update(['purchase_attempt_id' => $p['successful']->attempts()->where('attempt_number', 1)->value('id')]),
             'its result is not from its delivering attempt.'],

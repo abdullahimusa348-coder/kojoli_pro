@@ -36,9 +36,10 @@
             <div><dt class="text-navy-600">Amount charged</dt><dd class="mt-0.5 font-semibold tabular-nums text-navy-900" data-amount>{{ $money($purchase->amount_kobo) }}</dd></div>
             <div><dt class="text-navy-600">Created</dt><dd class="mt-0.5 text-navy-900">{{ $purchase->created_at?->format('j M Y, H:i:s') }}</dd></div>
             <div><dt class="text-navy-600">Completed</dt><dd class="mt-0.5 text-navy-900">{{ $purchase->completed_at?->format('j M Y, H:i:s') ?? '—' }}</dd></div>
-@if ($purchase->recipient_type?->isIdentity())
-            {{-- NIN/BVN only (Phase 11 CP3): staff see only whether a result is stored and its field count; result values are shown to the customer only.
-                 The directives start at column 0 so phone purchase pages render exactly as before. --}}
+@if ($purchase->recipient_type?->requiresResult())
+            {{-- NIN/BVN (Phase 11 CP3) and Exam PIN (CP4) only: staff see only whether a result is stored and its field count; result values
+                 (for Exam PIN the PIN and serial) are shown to the customer only. The directives start at column 0 so phone purchase pages
+                 render exactly as before. --}}
             <div><dt class="text-navy-600">Result</dt><dd class="mt-0.5 text-navy-900" data-result-summary>{{ $resultFieldCount === null ? 'None stored' : 'Stored · '.$resultFieldCount.' '.\Illuminate\Support\Str::plural('field', $resultFieldCount).' (shown to the customer only)' }}</dd></div>
 @endif
             @foreach (['Debit' => $purchase->debitTransaction, 'Refund' => $purchase->refundTransaction] as $label => $tx)

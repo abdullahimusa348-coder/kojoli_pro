@@ -9,18 +9,26 @@ use LogicException;
  * from the plan's locked service slug, never by the customer, and fixed once
  * the purchase exists.
  * - phone: Phase 10 meaning, for every historical purchase and every service
- *   other than NIN and BVN; purchases.recipient holds the canonical phone.
+ *   other than NIN, BVN and Exam PIN; purchases.recipient holds the canonical
+ *   phone.
  * - nin / bvn: an 11-digit NIN or BVN, kept only in
  *   purchase_identity_recipients (encrypted, masked, keyed hashes);
  *   purchases.recipient and request_fingerprint stay NULL.
- * Exam PIN and Smile Data have no recipient type yet: their inputs are not
- * defined, so new purchases of them are refused.
+ * - none (Phase 11 CP4, Exam PIN): the purchase has no customer-entered
+ *   recipient of any kind; purchases.recipient and request_fingerprint stay
+ *   NULL and there is no identity recipient. What it delivers is its result.
+ * Smile Data has no recipient type yet: its inputs are not defined, so new
+ * purchases of it are refused.
+ * Every case states explicitly whether it is an identity and whether it
+ * requires a result (exhaustive matches), so a new case can never inherit
+ * NIN/BVN handling by accident.
  */
 enum RecipientType: string
 {
     case Phone = 'phone';
     case Nin = 'nin';
     case Bvn = 'bvn';
+    case None = 'none';
 
     /** The type for a service, or null when that service cannot be purchased yet. */
     public static function forServiceSlug(string $slug): ?self
@@ -28,14 +36,31 @@ enum RecipientType: string
         return match ($slug) {
             'nin' => self::Nin,
             'bvn' => self::Bvn,
-            'exam-pin', 'smile-data' => null,
+            'exam-pin' => self::None,
+            'smile-data' => null,
             default => self::Phone,
         };
     }
 
+    /** NIN and BVN only: the purchase is bought for an 11-digit number, kept in purchase_identity_recipients. */
     public function isIdentity(): bool
     {
-        return $this !== self::Phone;
+        return match ($this) {
+            self::Nin, self::Bvn => true,
+            self::Phone, self::None => false,
+        };
+    }
+
+    /**
+     * Whether the purchase is successful only with the result its provider
+     * delivered (NIN, BVN and Exam PIN), and never refunded once it has one.
+     */
+    public function requiresResult(): bool
+    {
+        return match ($this) {
+            self::Nin, self::Bvn, self::None => true,
+            self::Phone => false,
+        };
     }
 
     public function label(): string
@@ -44,6 +69,7 @@ enum RecipientType: string
             self::Phone => 'Phone',
             self::Nin => 'NIN',
             self::Bvn => 'BVN',
+            self::None => 'No recipient',
         };
     }
 
@@ -82,7 +108,7 @@ enum RecipientType: string
     private function assertIdentity(): void
     {
         if (! $this->isIdentity()) {
-            throw new LogicException('Phone recipients use NigerianPhone.');
+            throw new LogicException($this === self::Phone ? 'Phone recipients use NigerianPhone.' : 'This purchase has no recipient.');
         }
     }
 }

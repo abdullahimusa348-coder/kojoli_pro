@@ -8,8 +8,9 @@ namespace App\Services\Providers\Data;
  * provider's documented request. Integer kobo only.
  * recipientType says what the recipient is (Phase 11): 'phone' (canonical
  * phone number, the Phase 10 meaning and the default), 'nin' or 'bvn' (the
- * 11-digit number, decrypted in memory for this call only). The recipient is
- * never exposed in debug output.
+ * 11-digit number, decrypted in memory for this call only), or 'none' (Exam
+ * PIN, CP4: there is no recipient and recipient is the empty string; an
+ * adapter sends no recipient). The recipient is never exposed in debug output.
  */
 final readonly class ProviderPurchaseRequest
 {

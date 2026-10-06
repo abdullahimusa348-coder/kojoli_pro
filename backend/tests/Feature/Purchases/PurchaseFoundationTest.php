@@ -373,9 +373,9 @@ describe('permissions', function () {
 it('adds only the approved purchase routes and no production adapters', function () {
     $routes = collect(Route::getRoutes())->map->uri();
 
-    // Phase 11 CP3 adds the Buy NIN/BVN routes.
+    // Phase 11 CP3 adds the Buy NIN/BVN routes, CP4 the Buy Exam PIN routes.
     expect($routes->filter(fn ($uri) => preg_match('/(buy|purchase|vend|order)/i', $uri) && ! str_starts_with($uri, 'admin/purchases')
-        && ! in_array($uri, ['buy', 'buy/{service}', 'buy/{service}/confirm', 'buy/nin', 'buy/nin/confirm', 'buy/bvn', 'buy/bvn/confirm', 'purchases',
+        && ! in_array($uri, ['buy', 'buy/{service}', 'buy/{service}/confirm', 'buy/nin', 'buy/nin/confirm', 'buy/bvn', 'buy/bvn/confirm', 'buy/exam-pin', 'buy/exam-pin/confirm', 'purchases',
             'purchases/{reference}'], true))->values()->all())->toBe([])
         ->and(config('providers.drivers'))->toBe([]); // the adapter registry (CP2) ships with no adapters
 });

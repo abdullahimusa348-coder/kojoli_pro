@@ -44,7 +44,7 @@ class DefaultCatalog
                 'icon' => CatalogIcon::Chart,
                 'description' => 'Examination and education services.',
                 'services' => [
-                    ['name' => 'Exam Pin', 'icon' => CatalogIcon::Chart, 'description' => 'Examination result-checker PINs.'],
+                    ['name' => 'Exam PIN', 'icon' => CatalogIcon::Chart, 'description' => 'Examination result-checker PINs.'],
                 ],
             ],
             [

@@ -24,10 +24,11 @@ use Illuminate\View\View;
  * purchases.manage and runs the CP4 re-check (authorization checked again
  * inside the action). There is no mark-successful, force-fail/refund, edit or
  * delete: only a definite provider outcome settles a purchase.
- * NIN/BVN purchases (Phase 11 CP3) show only the masked number, and only
- * whether a result is stored and its field count, never a result value. The
- * exact-match NIN/BVN search is PurchaseIdentitySearchController (?identity=1
- * lists its matches by keyed lookup hash).
+ * NIN/BVN purchases (Phase 11 CP3) show only the masked number; Exam PIN
+ * purchases (CP4) have no recipient. For both, staff see only whether a
+ * result is stored and its field count, never a result value (no PIN, no
+ * serial). The exact-match NIN/BVN search is PurchaseIdentitySearchController
+ * (?identity=1 lists its matches by keyed lookup hash).
  */
 class PurchaseController extends Controller
 {
@@ -103,7 +104,7 @@ class PurchaseController extends Controller
         $purchase->load(['user:id,name,email,phone', 'debitTransaction', 'refundTransaction', 'attempts.provider:id,name,code',
             'statusChanges.changedBy']);
         $fieldCount = null;
-        if ($purchase->recipient_type?->isIdentity()) {
+        if ($purchase->recipient_type?->requiresResult()) {
             Purchase::withMaskedRecipients($purchase->newCollection([$purchase]));
             // Whether a result is stored, and its field count: never a value.
             $fieldCount = PurchaseResult::where('purchase_id', $purchase->id)->value('field_count');

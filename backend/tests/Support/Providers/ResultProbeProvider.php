@@ -20,7 +20,9 @@ use Illuminate\Support\Facades\Log;
  * real provider or real result: status "delivered" means succeeded, with
  * "items" (a list of name and text) as the result and an optional "media"
  * entry that a text-only adapter drops; "rejected" means failed_definite;
- * anything else is unknown. Never registered in config/providers.php.
+ * anything else is unknown. For a purchase without a recipient (Exam PIN,
+ * recipientType "none") it sends no number. Never registered in
+ * config/providers.php.
  */
 class ResultProbeProvider implements ProviderAdapter
 {
@@ -42,6 +44,9 @@ class ResultProbeProvider implements ProviderAdapter
 
     /** Puts the purchased number into the outcome's provider reference. */
     public static bool $numberInReference = false;
+
+    /** Puts the first delivered item (for Exam PIN, such as the PIN) into the outcome's provider reference. */
+    public static bool $itemInReference = false;
 
     /** Logs the provider's whole answer. */
     public static bool $logsAnswer = false;
@@ -66,6 +71,7 @@ class ResultProbeProvider implements ProviderAdapter
         self::$ignoresItems = false;
         self::$itemInMessage = false;
         self::$numberInReference = false;
+        self::$itemInReference = false;
         self::$logsAnswer = false;
         self::$mapsMedia = false;
         self::$splitsMedia = false;
@@ -118,7 +124,8 @@ class ResultProbeProvider implements ProviderAdapter
         self::$lastNumber = $request->recipient;
         $response = $context->http->send(ProviderCallType::Purchase, 'POST', self::API.'/order', $this->apiHosts(), $this->timeoutSeconds(), [
             'headers' => ['Authorization' => 'Bearer '.$context->credential(CredentialKey::ApiKey)],
-            'json' => ['reference' => $request->requestReference, 'service' => $request->serviceSlug, 'number' => $request->recipient],
+            'json' => ['reference' => $request->requestReference, 'service' => $request->serviceSlug]
+                + ($request->recipientType === 'none' ? [] : ['number' => $request->recipient]),
         ]);
 
         return self::map($response->status, $response->json);
@@ -171,7 +178,11 @@ class ResultProbeProvider implements ProviderAdapter
             }
         }
 
-        $reference = self::$numberInReference ? 'RP-'.self::$lastNumber : ($json['id'] ?? null);
+        $reference = match (true) {
+            self::$numberInReference => 'RP-'.self::$lastNumber,
+            self::$itemInReference => 'RP-'.($fields[0]['value'] ?? ''),
+            default => $json['id'] ?? null,
+        };
         $message = self::$itemInMessage ? 'Delivered: '.($fields[0]['value'] ?? '') : 'Delivered.';
 
         return ProviderResult::succeeded($reference, $message, self::$withoutFields || $fields === [] ? null : new ProviderResultFields($fields));
