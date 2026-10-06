@@ -786,7 +786,7 @@ describe('purchases:verify', function () {
 });
 
 describe('security', function () {
-    it('never stores, logs, messages or shows a result value or the purchased number in plain text', function (RecipientType $type) {
+    it('never stores, logs or messages a result value or the purchased number in plain text, and shows a result only on its owner\'s page', function (RecipientType $type) {
         $logs = prtRecordLogs();
         $staff = prtStaff();
         $plan = prtPlan($type, 2);
@@ -822,33 +822,41 @@ describe('security', function () {
         expect(collect($purchases)->map(fn (Purchase $p) => $p->fresh()->status->value)->all())->toBe(['successful', 'successful', 'successful', 'successful'])
             ->and(PurchaseResult::count())->toBe(4);
         $pages = $this->actingAs($staff, 'admin')->get('/admin/purchases')->assertOk()->getContent();
-        foreach ($purchases as $purchase) {
+        $resultPages = [];
+        foreach ($purchases as $i => $purchase) {
             $pages .= $this->actingAs($staff, 'admin')->get("/admin/purchases/{$purchase->id}")->assertOk()->assertSee($purchase->reference)->getContent();
-            $pages .= $this->actingAs($user, 'web')->get("/purchases/{$purchase->reference}")->assertOk()->getContent();
+            // Phase 11 CP3: the owner's own result page is the one page that shows a result (IdentityPageGuardTest).
+            $resultPages[$i] = $this->actingAs($user, 'web')->get("/purchases/{$purchase->reference}")->assertOk()->getContent();
         }
-        $pages .= $this->actingAs($user, 'web')->get('/purchases')->assertOk()->getContent();
+        $pages .= $this->actingAs($user, 'web')->get('/purchases')->assertOk()->getContent().$this->get('/dashboard')->assertOk()->getContent();
         $everything = implode("\n", [prtDatabaseDump(), implode("\n", $logs->getArrayCopy()), $verify, $pages,
             Purchase::with(['result', 'attempts', 'statusChanges'])->get()->toJson(JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)]);
 
         foreach ($numbers as $number) {
-            expect($everything)->not->toContain($number);
+            expect($everything)->not->toContain($number)
+                ->and(implode("\n", $resultPages))->not->toContain($number);
         }
-        foreach ($sets as $set) {
+        foreach ($sets as $i => $set) {
             foreach (array_slice($set->all(), 0, 2) as $field) {
                 expect($everything)->not->toContain($field['value']);
+                foreach ($resultPages as $j => $html) {
+                    expect(str_contains($html, $field['value']))->toBe($i === $j); // only on its own purchase's page
+                }
             }
+            expect($resultPages[$i])->toContain('fixture '.$type->mask($numbers[$i])); // the echoed number, masked
         }
         prtClean();
     })->with('prt identity types');
 
-    it('reads stored results only in the result model and the purchase engine, and no page or route uses them', function () {
+    it('reads stored results only in the result model, the purchase engine and the owner\'s result page, and no view or route uses them', function () {
         $sources = collect([app_path(), resource_path(), base_path('routes'), config_path()])
             ->flatMap(fn (string $dir) => File::allFiles($dir))
             ->mapWithKeys(fn ($file) => [Str::after($file->getPathname(), base_path().'/') => $file->getContents()]);
         $using = fn (string $needle) => $sources->filter(fn (string $code) => str_contains($code, $needle))->keys()->sort()->values()->all();
 
         expect($using('encrypted_fields'))->toBe(['app/Models/PurchaseResult.php', 'app/Services/Purchases/PurchaseService.php'])
-            ->and($using('->fields()'))->toBe(['app/Models/PurchaseResult.php'])
+            // Phase 11 CP3: decrypted only for the owner's own result page; the page guards are in IdentityPageGuardTest.
+            ->and($using('->fields()'))->toBe(['app/Http/Controllers/User/PurchaseController.php', 'app/Models/PurchaseResult.php'])
             ->and($using('canBeRead('))->toBe(['app/Console/Commands/VerifyPurchasesCommand.php', 'app/Models/PurchaseResult.php'])
             ->and($sources->filter(fn ($code, $path) => str_starts_with($path, 'resources/') || str_starts_with($path, 'routes/'))
                 ->filter(fn (string $code) => preg_match('/PurchaseResult|purchase_results|encrypted_fields|->result\b|ProviderResultFields/', $code))->keys()->all())

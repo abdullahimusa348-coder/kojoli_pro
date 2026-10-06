@@ -40,6 +40,11 @@ class AppServiceProvider extends ServiceProvider
         // the purchase-submission allowance (plain throttle:N,1 limits share one per-user counter).
         RateLimiter::for('buy-confirm', fn (Request $request) => Limit::perMinute(30)->by((string) ($request->user()?->getAuthIdentifier() ?? $request->ip())));
         RateLimiter::for('buy-store', fn (Request $request) => Limit::perMinute(10)->by((string) ($request->user()?->getAuthIdentifier() ?? $request->ip())));
+        // Buy NIN / Buy BVN (Phase 11 CP3): the same limits on their own budgets, so the Data/Airtime ones never change.
+        RateLimiter::for('identity-confirm', fn (Request $request) => Limit::perMinute(30)->by((string) ($request->user()?->getAuthIdentifier() ?? $request->ip())));
+        RateLimiter::for('identity-store', fn (Request $request) => Limit::perMinute(10)->by((string) ($request->user()?->getAuthIdentifier() ?? $request->ip())));
+        // Staff exact-match NIN/BVN search (purchases.view): its own per-staff budget.
+        RateLimiter::for('identity-search', fn (Request $request) => Limit::perMinute(20)->by((string) ($request->user('admin')?->getAuthIdentifier() ?? $request->ip())));
 
         Route::bind('adminRole', fn (string $id) => Role::where('guard_name', 'admin')->findOrFail($id));
     }

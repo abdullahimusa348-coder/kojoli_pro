@@ -15,6 +15,7 @@ use App\Support\Wallet\Direction;
 use App\Support\Wallet\TransactionStatus;
 use App\Support\Wallet\TransactionType;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -146,6 +147,33 @@ class Purchase extends Model
     public function result(): HasOne
     {
         return $this->hasOne(PurchaseResult::class);
+    }
+
+    /**
+     * The recipient as pages may show it (Phase 11 CP3): the canonical phone of
+     * a phone purchase, exactly as before; the masked number of a NIN/BVN
+     * purchase, never the number itself. Lists load the masked values with
+     * withMaskedRecipients().
+     */
+    public function displayRecipient(): ?string
+    {
+        return $this->recipient_type?->isIdentity() ? $this->identityRecipient?->masked_value : $this->recipient;
+    }
+
+    /**
+     * Loads only the masked number of the NIN/BVN purchases in $purchases (no
+     * other identity column, and no query at all for a phone-only list).
+     *
+     * @param  EloquentCollection<int, self>  $purchases
+     * @return EloquentCollection<int, self>
+     */
+    public static function withMaskedRecipients(EloquentCollection $purchases): EloquentCollection
+    {
+        if ($purchases->contains(fn (self $purchase) => $purchase->recipient_type?->isIdentity())) {
+            $purchases->load('identityRecipient:id,purchase_id,masked_value');
+        }
+
+        return $purchases;
     }
 
     /** @return BelongsTo<Transaction, $this> */

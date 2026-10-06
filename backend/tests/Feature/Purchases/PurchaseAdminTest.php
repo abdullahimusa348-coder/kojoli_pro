@@ -289,7 +289,9 @@ describe('staff re-check', function () {
         $routes = collect(Route::getRoutes())->filter(fn ($r) => str_starts_with($r->uri(), 'admin/purchases'))
             ->map(fn ($r) => implode('|', $r->methods()).' '.$r->uri())->sort()->values()->all();
 
-        expect($routes)->toBe(['GET|HEAD admin/purchases', 'GET|HEAD admin/purchases/{purchase}', 'POST admin/purchases/{purchase}/recheck']);
+        // Phase 11 CP3 adds only the POST exact-match NIN/BVN search and its clear action.
+        expect($routes)->toBe(['GET|HEAD admin/purchases', 'GET|HEAD admin/purchases/{purchase}', 'POST admin/purchases/identity-search',
+            'POST admin/purchases/identity-search/clear', 'POST admin/purchases/{purchase}/recheck']);
     });
 });
 
@@ -297,6 +299,6 @@ it('adds only the approved customer purchase routes and no production provider',
     $config = require base_path('config/providers.php');
 
     expect(collect(Route::getRoutes())->map->uri()->filter(fn ($u) => preg_match('/(buy|purchase)/i', $u) && ! str_starts_with($u, 'admin/'))->unique()->sort()->values()->all())
-        ->toBe(['buy', 'buy/{service}', 'buy/{service}/confirm', 'purchases', 'purchases/{reference}'])
+        ->toBe(['buy', 'buy/bvn', 'buy/bvn/confirm', 'buy/nin', 'buy/nin/confirm', 'buy/{service}', 'buy/{service}/confirm', 'purchases', 'purchases/{reference}'])
         ->and($config['drivers'])->toBe([]);
 });

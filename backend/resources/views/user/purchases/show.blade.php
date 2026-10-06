@@ -30,10 +30,14 @@
             <div><dt class="text-navy-600">Reference</dt><dd class="mt-0.5 break-all font-mono text-xs text-navy-900">{{ $purchase->reference }}</dd></div>
             <div><dt class="text-navy-600">Service</dt><dd class="mt-0.5 font-medium text-navy-900">{{ $purchase->service_name }} · {{ $purchase->network?->label() ?? $purchase->product_name }}</dd></div>
             <div><dt class="text-navy-600">{{ $purchase->amount_type === \App\Support\Catalog\AmountType::Variable ? 'Airtime' : 'Plan' }}</dt><dd class="mt-0.5 font-medium text-navy-900">{{ $purchase->amount_type === \App\Support\Catalog\AmountType::Variable ? \App\Support\Money::format($purchase->face_value_kobo) : $purchase->plan_name }}</dd></div>
-            <div><dt class="text-navy-600">Recipient</dt><dd class="mt-0.5 font-mono tabular-nums text-navy-900">{{ $purchase->recipient }}</dd></div>
+            <div><dt class="text-navy-600">{{ $purchase->recipient_type?->isIdentity() ? $purchase->recipient_type->label() : 'Recipient' }}</dt><dd class="mt-0.5 font-mono tabular-nums text-navy-900">{{ $purchase->displayRecipient() }}</dd></div>
             <div><dt class="text-navy-600">Amount charged</dt><dd class="mt-0.5 font-semibold tabular-nums text-navy-900" data-charged>{{ \App\Support\Money::format($purchase->amount_kobo) }}</dd></div>
             <div><dt class="text-navy-600">Date</dt><dd class="mt-0.5 text-navy-900">{{ $purchase->created_at?->format('j M Y, H:i') }}</dd></div>
         </dl>
+@if ($showResult)
+        {{-- NIN/BVN only (Phase 11 CP3). The directives start at column 0 so phone purchase pages render exactly as before. --}}
+        @include('partials.purchases.result-fields', ['fields' => $resultFields])
+@endif
 
         <div class="mt-5 flex flex-wrap gap-2">
             @if (! $purchase->isFinal())

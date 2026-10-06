@@ -21,7 +21,7 @@ class CustomerDashboard
     public const RECENT_PURCHASES = 5;
 
     private const PURCHASE_COLUMNS = ['id', 'reference', 'user_id', 'service_name', 'product_name', 'plan_name', 'network', 'recipient',
-        'face_value_kobo', 'amount_kobo', 'amount_type', 'status', 'created_at'];
+        'recipient_type', 'face_value_kobo', 'amount_kobo', 'amount_type', 'status', 'created_at'];
 
     /**
      * @return array{
@@ -39,7 +39,8 @@ class CustomerDashboard
         $required = User::emailVerificationRequired();
         $verified = $user->hasVerifiedEmail();
         // Newest first; the in-progress count (pending or under review) covers all of the customer's purchases.
-        $recent = Purchase::where('user_id', $user->id)->latest('id')->limit(self::RECENT_PURCHASES)->get(self::PURCHASE_COLUMNS);
+        // NIN/BVN purchases (Phase 11 CP3) show only their masked number.
+        $recent = Purchase::withMaskedRecipients(Purchase::where('user_id', $user->id)->latest('id')->limit(self::RECENT_PURCHASES)->get(self::PURCHASE_COLUMNS));
 
         return [
             'user' => $user,

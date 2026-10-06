@@ -6,6 +6,7 @@ use App\Actions\Admin\Purchases\RecheckPurchase;
 use App\Http\Controllers\Controller;
 use App\Models\Provider;
 use App\Models\Purchase;
+use App\Models\PurchaseResult;
 use App\Models\PurchaseStatusChange;
 use App\Models\Service;
 use App\Services\Purchases\PurchaseMonitor;
@@ -23,6 +24,10 @@ use Illuminate\View\View;
  * purchases.manage and runs the CP4 re-check (authorization checked again
  * inside the action). There is no mark-successful, force-fail/refund, edit or
  * delete: only a definite provider outcome settles a purchase.
+ * NIN/BVN purchases (Phase 11 CP3) show only the masked number, and only
+ * whether a result is stored and its field count, never a result value. The
+ * exact-match NIN/BVN search is PurchaseIdentitySearchController (?identity=1
+ * lists its matches by keyed lookup hash).
  */
 class PurchaseController extends Controller
 {
@@ -40,11 +45,15 @@ class PurchaseController extends Controller
             'completed' => ['nullable', Rule::in(['today'])],
             // Pending or review purchases whose status check is overdue (PurchaseMonitor).
             'overdue' => ['nullable', Rule::in(['1'])],
+            // The staff member's current exact-match NIN/BVN search (POSTed, kept in the session as lookup hashes only).
+            'identity' => ['nullable', Rule::in(['1'])],
         ]);
+        $identitySearch = ($filters['identity'] ?? null) === '1';
+        $identity = $identitySearch ? PurchaseIdentitySearchController::current($request) : null;
 
         $purchases = Purchase::query()
-            ->select(['id', 'reference', 'user_id', 'service_name', 'product_name', 'plan_name', 'network', 'recipient', 'amount_kobo', 'status',
-                'successful_attempt_id', 'next_check_at', 'created_at'])
+            ->select(['id', 'reference', 'user_id', 'service_name', 'product_name', 'plan_name', 'network', 'recipient_type', 'recipient', 'amount_kobo',
+                'status', 'successful_attempt_id', 'next_check_at', 'created_at'])
             // When the purchase moved to review (its first transition into review).
             ->addSelect(['review_since' => PurchaseStatusChange::select('created_at')->whereColumn('purchase_id', 'purchases.id')
                 ->where('new_status', PurchaseStatus::Review->value)->whereColumn('old_status', '!=', 'new_status')->orderBy('id')->limit(1)])
@@ -65,9 +74,14 @@ class PurchaseController extends Controller
             ->when($filters['to'] ?? null, fn ($query, string $to) => $query->where('created_at', '<=', $to.' 23:59:59'))
             ->when(($filters['completed'] ?? null) === 'today', fn ($query) => $query->completedToday())
             ->when(($filters['overdue'] ?? null) === '1', fn ($query) => $query->checkOverdue())
+            // An ended or missing search matches nothing, never every purchase.
+            ->when($identitySearch, fn ($query) => $identity === null ? $query->whereRaw('1 = 0')
+                : $query->where('recipient_type', $identity['type']->value)
+                    ->whereHas('identityRecipient', fn ($recipient) => $recipient->whereIn('lookup_hash', $identity['hashes'])))
             ->latest('id')
             ->paginate(25)
             ->withQueryString();
+        Purchase::withMaskedRecipients($purchases->getCollection());
 
         return view('admin.purchases.index', [
             'purchases' => $purchases,
@@ -80,6 +94,7 @@ class PurchaseController extends Controller
             'services' => Service::whereIn('id', Purchase::select('service_id')->distinct())->orderBy('name')->get(['id', 'name']),
             'providers' => Provider::orderBy('name')->get(['id', 'name']),
             'businessTimezone' => BusinessTime::timezone(),
+            'identitySearch' => ['requested' => $identitySearch, 'type' => $identity['type'] ?? null],
         ]);
     }
 
@@ -87,8 +102,14 @@ class PurchaseController extends Controller
     {
         $purchase->load(['user:id,name,email,phone', 'debitTransaction', 'refundTransaction', 'attempts.provider:id,name,code',
             'statusChanges.changedBy']);
+        $fieldCount = null;
+        if ($purchase->recipient_type?->isIdentity()) {
+            Purchase::withMaskedRecipients($purchase->newCollection([$purchase]));
+            // Whether a result is stored, and its field count: never a value.
+            $fieldCount = PurchaseResult::where('purchase_id', $purchase->id)->value('field_count');
+        }
 
-        return view('admin.purchases.show', ['purchase' => $purchase]);
+        return view('admin.purchases.show', ['purchase' => $purchase, 'resultFieldCount' => $fieldCount === null ? null : (int) $fieldCount]);
     }
 
     public function recheck(Request $request, Purchase $purchase, RecheckPurchase $recheck): RedirectResponse

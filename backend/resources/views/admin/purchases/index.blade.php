@@ -66,6 +66,7 @@
             <input id="to" name="to" type="date" value="{{ $filters['to'] ?? '' }}" class="{{ $control }}">
         </div>
         @if (($filters['overdue'] ?? null) === '1')<input type="hidden" name="overdue" value="1">@endif
+@if ($identitySearch['requested'])<input type="hidden" name="identity" value="1">@endif
         <div class="lg:col-span-3 xl:col-span-1">
             <label for="completed" class="mb-1 block text-xs font-medium text-navy-700">Completed</label>
             <select id="completed" name="completed" class="{{ $control }}">
@@ -80,6 +81,42 @@
         </div>
     </form>
 
+    {{-- Exact-match NIN/BVN search (Phase 11 CP3): POSTed, so the number never goes into the page address; never refilled or shown. --}}
+    @php($identityErrors = $errors->getBag('identity'))
+    <form method="POST" action="{{ route('admin.purchases.identity-search') }}" class="mt-4 grid gap-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-navy-100 sm:grid-cols-4 sm:items-end" role="search" aria-label="Find a NIN or BVN purchase" data-identity-search>
+        @csrf
+        <div>
+            <label for="identity_type" class="mb-1 block text-xs font-medium text-navy-700">NIN or BVN</label>
+            <select id="identity_type" name="identity_type" class="{{ $control }}">
+                @foreach (['nin' => 'NIN', 'bvn' => 'BVN'] as $value => $text)
+                    <option value="{{ $value }}" @selected(old('identity_type', $identitySearch['type']?->value ?? 'nin') === $value)>{{ $text }}</option>
+                @endforeach
+            </select>
+        </div>
+        <div class="sm:col-span-2">
+            <label for="identity_number" class="mb-1 block text-xs font-medium text-navy-700">Exact number</label>
+            <input id="identity_number" name="identity_number" type="text" value="" inputmode="numeric" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="30" required placeholder="11 digits" class="{{ $control }}" data-identity-search-input>
+        </div>
+        <div class="flex sm:justify-end">
+            <button type="submit" class="inline-flex items-center rounded-lg bg-navy-900 px-4 py-2 text-sm font-semibold text-white hover:bg-navy-800">Find</button>
+        </div>
+        @if ($identityErrors->any())<p class="text-sm text-red-600 sm:col-span-4" data-identity-search-error>{{ $identityErrors->first() }}</p>@endif
+        <p class="text-xs text-navy-500 sm:col-span-4">Finds NIN and BVN purchases by the exact number. The number is not kept, shown or put in the page address; search NIN and BVN here, not in the search box above.</p>
+    </form>
+
+    @if ($identitySearch['requested'])
+        @if ($identitySearch['type'])
+            <div class="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-navy-700" data-identity-filter="{{ $identitySearch['type']->value }}">
+                <p>Showing {{ $identitySearch['type']->label() }} purchases for the number you searched for.</p>
+                <form method="POST" action="{{ route('admin.purchases.identity-search.clear') }}">
+                    @csrf
+                    <button type="submit" class="text-brand-700 hover:underline">Clear search</button>
+                </form>
+            </div>
+        @else
+            <p class="mt-4 text-sm text-navy-700" data-identity-filter-ended>This NIN/BVN search has ended. Search again to see its purchases. <a href="{{ route('admin.purchases') }}" class="text-brand-700 hover:underline">Show all</a></p>
+        @endif
+    @endif
     @if (($filters['overdue'] ?? null) === '1')
         <p class="mt-4 text-sm text-navy-700" data-overdue-filter>Showing pending and review purchases whose status check is overdue. <a href="{{ route('admin.purchases') }}" class="text-brand-700 hover:underline">Show all</a></p>
     @endif
@@ -99,7 +136,7 @@
                     <li class="flex flex-col gap-2 px-5 py-4 md:flex-row md:items-center" data-purchase="{{ $purchase->reference }}">
                         <div class="min-w-0 flex-1">
                             <a href="{{ route('admin.purchases.show', $purchase) }}" class="block break-all font-mono text-xs font-semibold text-brand-700 hover:underline">{{ $purchase->reference }}</a>
-                            <p class="break-words text-sm text-navy-800">{{ $purchase->service_name }} · {{ $purchase->product_name }} · {{ $purchase->plan_name }} → <span class="tabular-nums">{{ $purchase->recipient }}</span></p>
+                            <p class="break-words text-sm text-navy-800">{{ $purchase->service_name }} · {{ $purchase->product_name }} · {{ $purchase->plan_name }} → <span class="tabular-nums">{{ $purchase->displayRecipient() }}</span></p>
                             <p class="break-all text-xs text-navy-500">{{ $purchase->user->name }} ({{ $purchase->user->email }}) · {{ $purchase->created_at?->format('j M Y, H:i') }}@if ($purchase->successfulAttempt) · via {{ $purchase->successfulAttempt->provider->name }} (route {{ $purchase->successfulAttempt->route_priority }})@endif</p>
                             @unless ($purchase->isFinal())
                                 <p class="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-navy-600" data-next-check>

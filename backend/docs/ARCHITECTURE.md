@@ -132,7 +132,7 @@ Running it in production: a cron entry for `php artisan schedule:run` every minu
     - the CHECK holds;
     - rollback is refused while NIN data exists;
     - parallel submissions of one NIN confirmation give one purchase, one identity row, one debit and one provider call.
-- **CP2 (done): NIN/BVN purchase results.** Engine and database only: no route, controller, page or catalog change, no provider (`providers.drivers` stays `[]`), and no retention or deletion yet.
+- **CP2 (done, accepted at `f043c7a`): NIN/BVN purchase results.** Engine and database only: no route, controller, page or catalog change, no provider (`providers.drivers` stays `[]`), and no retention or deletion yet.
   - **Result contract:** only a succeeded `ProviderResult` may carry `ProviderResultFields`; failed and unknown outcomes cannot. The adapter maps its provider's documented response into an ordered list of text fields (`key`, `label`, `value`), and the engine defines no field names.
     - **Limits:** 1 to 50 fields; unique keys matching `^[a-z][a-z0-9_]{0,49}$`; labels of 1 to 100 characters; values up to 1,000; valid UTF-8 without control characters; no media (a `data:` URI or a base64-like run of 200 or more characters).
     - **Invalid sets:** they throw while the adapter builds them, which `ProviderCaller` turns into `unknown`. They are never stored and never count as a failure.
@@ -170,3 +170,25 @@ Running it in production: a cron entry for `php artisan schedule:run` every minu
     - a success without a result stays unclear;
     - the database constraints hold;
     - the results table rolls back and forward over historical data, and rollback is refused once a result exists.
+- **CP3 (done): Buy NIN / Buy BVN for customers and staff.** Pages and routes over the CP1/CP2 engine. `PurchaseService` is unchanged, and no provider is installed: `providers.drivers` stays `[]`, so NIN and BVN show as "Not available right now" and nothing can be bought. There is no retention or deletion yet.
+  - **Catalog:** `PurchaseCatalog` lists NIN and BVN beside Data and Airtime. It offers only their active, priced, fixed-price plans with an executable route, and links them to their own Buy pages.
+  - **Customer flow** (`IdentityBuyController`): literal routes `GET /buy/{nin,bvn}`, then `POST …/confirm`, then `POST /buy/{nin,bvn}`.
+    - **Never echoed:** the number is only ever POSTed. It is never in a URL, never flashed back (`identity_number` is in `dontFlash`), never refilled into a form (`value=""`, `autocomplete="off"`) and never in a validation or refusal message.
+    - **Confirmation:** it shows the service, plan, price and balance, the full number once, and the approved consent sentence (`config/purchases.php` → `identity_consent`). It is sent `Cache-Control: no-store, private`.
+    - **Sealed payload:** the number reaches the purchase only inside an encrypted payload (`Crypt`, app key) that binds the customer, service, plan, confirmed amount, a one-time token and its issue time. The token is also the purchase idempotency key, so a repeated submission returns the same purchase. A payload that does not decrypt or does not match is refused before anything is bought ("This confirmation is no longer valid").
+    - **Expiry:** a confirmation can be paid for exactly 10 minutes from its confirmation page; showing it again for the consent box keeps that time. After that it is refused before anything is bought ("This confirmation has expired"). Data and Airtime confirmations are unchanged (no expiry).
+    - **Payment:** without the ticked consent box, the confirmation is shown again. With it, `PurchaseService` re-prices, checks consent and fixed price, debits once and runs the purchase as before. The customer is then redirected by reference only.
+    - **Rate limits:** separate limiters `identity-confirm` (30 per minute) and `identity-store` (10 per minute). The Data/Airtime budgets are unchanged.
+  - **After payment:** only the mask (seven dots and the last four digits, `Purchase::displayRecipient()`) is shown, in history, on the dashboard, on the result page and to staff.
+    - **Result page:** the owner's own result page decrypts the result (`PurchaseResult::fields()`) and shows every field escaped. If the result cannot be read, it shows a neutral note. This page is also sent no-store, private.
+    - **Other customers** get a 404. Phone purchase pages are as in Phase 10.
+  - **Staff** (existing `purchases.view`, no new permission):
+    - **Masked only:** lists and details show the masked number. Of a result they show only whether it is stored and its field count, never a value.
+    - **Exact-match search** (`PurchaseIdentitySearchController`): a separate POST form (limiter `identity-search`, 20 per minute per staff member). The number is never in a URL, echoed, flashed, logged or stored. The staff session keeps only its keyed, type-prefixed lookup hashes (current and previous app keys) for 15 minutes. `?identity=1` lists the matches; an ended or damaged search matches nothing.
+    - **Ordinary GET search** (`RefuseIdentityNumberSearch`, before authentication): a term that matches the 11-digit NIN/BVN rule and is not an accepted phone number is not searched, echoed, logged or kept. The request is redirected to the plain list with a neutral message pointing to the NIN/BVN search, and its address is rewritten first, so neither the session's previous URL nor a signed-out visitor's intended URL holds the term. Phone search is unchanged: a local phone number is also 11 digits and stays a phone search. The term still travels in that one GET request, so the web server's own access log can record it.
+  - **Page guards** (replacing the CP1/CP2 code scans of pages):
+    - the data of every customer and staff view is recorded while the pages render;
+    - only the confirmation page receives the number;
+    - only its owner's result page receives result values;
+    - views receive identity rows with the masked value only, and never a stored result.
+  - **Proven** by feature tests and a MariaDB test: parallel HTTP submissions of one sealed confirmation give one purchase, one debit and one provider call, and a confirmation sealed for another customer buys nothing.

@@ -15,6 +15,7 @@ use App\Http\Controllers\Admin\ProviderController;
 use App\Http\Controllers\Admin\ProviderCredentialController;
 use App\Http\Controllers\Admin\ProviderServiceController;
 use App\Http\Controllers\Admin\PurchaseController;
+use App\Http\Controllers\Admin\PurchaseIdentitySearchController;
 use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\ServiceCategoryController;
 use App\Http\Controllers\Admin\ServiceController;
@@ -30,11 +31,13 @@ use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\User\BuyController;
 use App\Http\Controllers\User\DashboardController;
 use App\Http\Controllers\User\FundWalletController;
+use App\Http\Controllers\User\IdentityBuyController;
 use App\Http\Controllers\User\PasswordController;
 use App\Http\Controllers\User\ProfileController;
 use App\Http\Controllers\User\PurchaseController as CustomerPurchaseController;
 use App\Http\Controllers\User\SecurityController;
 use App\Http\Controllers\User\WalletController as CustomerWalletController;
+use App\Http\Middleware\RefuseIdentityNumberSearch;
 use App\Support\Admin\AdminModule;
 use App\Support\Enums\SystemPermission;
 use App\Support\Enums\UserType;
@@ -96,6 +99,15 @@ Route::middleware(['auth:web', 'auth.session'])->group(function () {
             ->middleware('throttle:buy-confirm')->name('buy.confirm');
         Route::post('buy/{service}', [BuyController::class, 'store'])->whereIn('service', ['data', 'airtime'])
             ->middleware('throttle:buy-store')->name('buy.store');
+        // Buy NIN / Buy BVN (Phase 11 CP3): literal routes per service with their own rate limits. The number is
+        // only ever POSTed, never put in a URL; the confirmation carries it encrypted and bound to the customer.
+        foreach (['nin', 'bvn'] as $identity) {
+            Route::get("buy/{$identity}", [IdentityBuyController::class, 'create'])->defaults('service', $identity)->name("buy.{$identity}");
+            Route::post("buy/{$identity}/confirm", [IdentityBuyController::class, 'confirm'])->defaults('service', $identity)
+                ->middleware('throttle:identity-confirm')->name("buy.{$identity}.confirm");
+            Route::post("buy/{$identity}", [IdentityBuyController::class, 'store'])->defaults('service', $identity)
+                ->middleware('throttle:identity-store')->name("buy.{$identity}.store");
+        }
         Route::get('purchases', [CustomerPurchaseController::class, 'index'])->name('purchases');
         Route::get('purchases/{reference}', [CustomerPurchaseController::class, 'show'])->where('reference', 'PUR-[0-9A-Z]{26}')->name('purchases.show');
     });
@@ -321,10 +333,16 @@ Route::prefix('admin')->name('admin.')->group(function () {
         // (also re-checked inside the action). No mark-successful, force-fail/refund, edit or delete routes.
         Route::middleware([SystemPermission::AdminAccess->middleware(), SystemPermission::PurchasesView->middleware()])
             ->prefix('purchases')->name('purchases')->group(function () {
-                Route::get('/', [PurchaseController::class, 'index']);
+                // The ordinary GET search refuses a NIN/BVN-shaped term (it would be in the page address): use the POST search below.
+                Route::get('/', [PurchaseController::class, 'index'])->middleware(RefuseIdentityNumberSearch::class);
                 Route::get('{purchase}', [PurchaseController::class, 'show'])->whereNumber('purchase')->name('.show');
                 Route::post('{purchase}/recheck', [PurchaseController::class, 'recheck'])->whereNumber('purchase')
                     ->middleware([SystemPermission::PurchasesManage->middleware(), 'throttle:30,1'])->name('.recheck');
+                // Exact-match NIN/BVN search (Phase 11 CP3): POST only, so the number is never in a URL; the staff
+                // session keeps only its keyed lookup hashes, for a short time.
+                Route::post('identity-search', [PurchaseIdentitySearchController::class, 'store'])->middleware('throttle:identity-search')
+                    ->name('.identity-search');
+                Route::post('identity-search/clear', [PurchaseIdentitySearchController::class, 'destroy'])->name('.identity-search.clear');
             });
 
         // Customer transactions (read-only in Phase 8): transactions.view.

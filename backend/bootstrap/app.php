@@ -3,7 +3,9 @@
 use App\Http\Middleware\EnsureEmailIsVerifiedIfRequired;
 use App\Http\Middleware\EnsureSystemUserIsActive;
 use App\Http\Middleware\EnsureUserIsActive;
+use App\Http\Middleware\RefuseIdentityNumberSearch;
 use App\Http\Middleware\UseAdminSession;
+use Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -33,6 +35,10 @@ return Application::configure(basePath: dirname(__DIR__))
         // Sign out web sessions of customer accounts that were disabled after login.
         $middleware->web(append: [EnsureUserIsActive::class]);
 
+        // The ordinary purchase search never takes a NIN or BVN (Phase 11 CP3): refused before authentication,
+        // so a signed-out visitor's intended URL never holds one.
+        $middleware->prependToPriorityList(before: AuthenticatesRequests::class, prepend: RefuseIdentityNumberSearch::class);
+
         $middleware->redirectGuestsTo(fn (Request $request) => UseAdminSession::isAdminRequest($request)
             ? route('admin.login')
             : route('login'));
@@ -42,5 +48,6 @@ return Application::configure(basePath: dirname(__DIR__))
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         // Provider credential fields are write-only: never flash them back as old input.
-        $exceptions->dontFlash(['credentials']);
+        // A NIN or BVN (Phase 11 CP3) is never flashed either, so it never reaches the session.
+        $exceptions->dontFlash(['credentials', 'identity_number']);
     })->create();

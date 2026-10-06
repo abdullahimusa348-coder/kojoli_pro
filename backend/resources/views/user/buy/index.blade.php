@@ -16,7 +16,7 @@
                 <li class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-navy-100" data-buy-service="{{ $item['slug'] }}">
                     <h2 class="text-base font-semibold text-navy-900">{{ $item['label'] }}</h2>
                     @if ($item['available'])
-                        <a href="{{ route('buy.service', $item['slug']) }}" class="mt-3 inline-flex items-center rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700">Buy {{ $item['label'] }}</a>
+                        <a href="{{ \App\Services\Purchases\PurchaseCatalog::buyUrl($item['slug']) }}" class="mt-3 inline-flex items-center rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700">Buy {{ $item['label'] }}</a>
                     @else
                         <p class="mt-2 text-sm text-navy-500" data-unavailable>Not available right now.</p>
                     @endif

@@ -39,4 +39,15 @@ return [
     'customer_refresh_seconds' => 30,
     'customer_refresh_window_minutes' => 10,
 
+    /*
+    | NIN and BVN purchases (Phase 11 CP3): the exact sentence the customer
+    | must accept on the confirmation page before a NIN or BVN is submitted.
+    | Approved wording; no other legal text is shown. A service without its
+    | sentence cannot be bought (its Buy page says it is not available).
+    */
+    'identity_consent' => [
+        'nin' => 'I confirm that the NIN I entered is correct and I consent to its submission for this service.',
+        'bvn' => 'I confirm that the BVN I entered is correct and I consent to its submission for this service.',
+    ],
+
 ];

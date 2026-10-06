@@ -30,12 +30,17 @@
             <div><dt class="text-navy-600">Customer type at purchase</dt><dd class="mt-0.5 text-navy-900">{{ $purchase->user_type->label() }}</dd></div>
             <div><dt class="text-navy-600">Service · product · plan</dt><dd class="mt-0.5 break-words font-medium text-navy-900">{{ $purchase->service_name }} · {{ $purchase->product_name }} · {{ $purchase->plan_name }}</dd></div>
             <div><dt class="text-navy-600">Network</dt><dd class="mt-0.5 text-navy-900">{{ $purchase->network?->label() ?? '—' }}</dd></div>
-            <div><dt class="text-navy-600">Recipient</dt><dd class="mt-0.5 font-mono tabular-nums text-navy-900" data-recipient>{{ $purchase->recipient }}</dd></div>
+            <div><dt class="text-navy-600">{{ $purchase->recipient_type?->isIdentity() ? $purchase->recipient_type->label() : 'Recipient' }}</dt><dd class="mt-0.5 font-mono tabular-nums text-navy-900" data-recipient>{{ $purchase->displayRecipient() }}</dd></div>
             <div><dt class="text-navy-600">Face value</dt><dd class="mt-0.5 tabular-nums text-navy-900">{{ $money($purchase->face_value_kobo) }}</dd></div>
             <div><dt class="text-navy-600">Discount / fee</dt><dd class="mt-0.5 tabular-nums text-navy-900">{{ $money($purchase->discount_kobo) }} / {{ $money($purchase->fee_kobo) }}</dd></div>
             <div><dt class="text-navy-600">Amount charged</dt><dd class="mt-0.5 font-semibold tabular-nums text-navy-900" data-amount>{{ $money($purchase->amount_kobo) }}</dd></div>
             <div><dt class="text-navy-600">Created</dt><dd class="mt-0.5 text-navy-900">{{ $purchase->created_at?->format('j M Y, H:i:s') }}</dd></div>
             <div><dt class="text-navy-600">Completed</dt><dd class="mt-0.5 text-navy-900">{{ $purchase->completed_at?->format('j M Y, H:i:s') ?? '—' }}</dd></div>
+@if ($purchase->recipient_type?->isIdentity())
+            {{-- NIN/BVN only (Phase 11 CP3): staff see only whether a result is stored and its field count; result values are shown to the customer only.
+                 The directives start at column 0 so phone purchase pages render exactly as before. --}}
+            <div><dt class="text-navy-600">Result</dt><dd class="mt-0.5 text-navy-900" data-result-summary>{{ $resultFieldCount === null ? 'None stored' : 'Stored · '.$resultFieldCount.' '.\Illuminate\Support\Str::plural('field', $resultFieldCount).' (shown to the customer only)' }}</dd></div>
+@endif
             @foreach (['Debit' => $purchase->debitTransaction, 'Refund' => $purchase->refundTransaction] as $label => $tx)
                 <div><dt class="text-navy-600">{{ $label }} transaction</dt><dd class="mt-0.5 break-all font-mono text-xs text-navy-900" data-{{ strtolower($label) }}-transaction>
                     @if ($tx)
