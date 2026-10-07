@@ -835,16 +835,17 @@ describe('scope', function () {
             ->and(Permission::whereIn('name', ['referrals.view', 'referrals.manage'])->count())->toBe(2);
     });
 
-    it('adds only the approved admin Referral & Commission routes and module (CP2), and no customer page or menu item', function () {
+    it('adds only the approved referral routes, module and menu item (CP2 admin module, CP3 Referral page and Referrals tab)', function () {
         $referralRoutes = collect(Route::getRoutes())->filter(fn ($route) => preg_match('/referral|commission/i', $route->uri().' '.$route->getName()))
             ->map(fn ($route) => implode('|', $route->methods()).' '.$route->uri())->values()->all();
 
         expect($referralRoutes)->toBe([
-            'GET|HEAD admin/referrals', 'GET|HEAD admin/referrals/rates', 'GET|HEAD admin/referrals/rates/{service}/edit', 'PUT admin/referrals/rates/{service}',
+            'GET|HEAD referrals', 'GET|HEAD admin/referrals', 'GET|HEAD admin/referrals/links', 'GET|HEAD admin/referrals/rates',
+            'GET|HEAD admin/referrals/rates/{service}/edit', 'PUT admin/referrals/rates/{service}',
         ])
             ->and(AdminModule::Referrals->isBuilt())->toBeTrue()
             ->and(AdminModule::Referrals->plannedPhase())->toBeNull()
-            ->and(array_filter(CustomerNav::cases(), fn (CustomerNav $item) => str_contains($item->value, 'referral')))->toBe([]);
+            ->and(array_values(array_filter(CustomerNav::cases(), fn (CustomerNav $item) => str_contains($item->value, 'referral'))))->toBe([CustomerNav::Referrals]);
     });
 
     it('never writes the append-only tables in bulk, which would skip their guards (T7)', function () {

@@ -91,13 +91,17 @@ describe('page', function () {
         expect(PersonalAccessToken::count())->toBe(1);
     });
 
-    it('shows no future-module content', function () {
-        $html = mb_strtolower($this->actingAs(securityCustomer())->get('/security')->getContent());
+    it('shows no future-module content', function (string $type) {
+        // Referrals (Phase 12) appear only as the menu item of a Subscriber, Vendor or Affiliate, never for an API User.
+        $html = mb_strtolower($this->actingAs(securityCustomer(['user_type' => $type]))->get('/security')->getContent());
+        $menuItem = '/<a [^>]*data-customer-menu="referrals"[^>]*>.*?<\/a>/s';
+        expect(preg_match_all($menuItem, $html))->toBe($type === 'api_user' ? 0 : 2);
+        $html = preg_replace($menuItem, '', $html);
 
         foreach (['deposit', 'airtime', 'referral', 'withdraw', 'payment', 'two-factor', '2fa', 'api key', 'create token', 'delete account', 'coming soon'] as $word) {
             expect(str_contains($html, $word))->toBeFalse("found \"{$word}\"");
         }
-    });
+    })->with(['subscriber', 'api_user']);
 });
 
 describe('password change', function () {

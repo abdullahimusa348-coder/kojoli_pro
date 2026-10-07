@@ -18,6 +18,7 @@ use App\Http\Controllers\Admin\ProviderServiceController;
 use App\Http\Controllers\Admin\PurchaseController;
 use App\Http\Controllers\Admin\PurchaseIdentitySearchController;
 use App\Http\Controllers\Admin\ReferralController;
+use App\Http\Controllers\Admin\ReferralLinkController;
 use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\ServiceCategoryController;
 use App\Http\Controllers\Admin\ServiceController;
@@ -38,6 +39,7 @@ use App\Http\Controllers\User\IdentityBuyController;
 use App\Http\Controllers\User\PasswordController;
 use App\Http\Controllers\User\ProfileController;
 use App\Http\Controllers\User\PurchaseController as CustomerPurchaseController;
+use App\Http\Controllers\User\ReferralController as CustomerReferralController;
 use App\Http\Controllers\User\SecurityController;
 use App\Http\Controllers\User\WalletController as CustomerWalletController;
 use App\Http\Middleware\RefuseIdentityNumberSearch;
@@ -121,6 +123,10 @@ Route::middleware(['auth:web', 'auth.session'])->group(function () {
         Route::get('purchases', [CustomerPurchaseController::class, 'index'])->name('purchases');
         Route::get('purchases/{reference}', [CustomerPurchaseController::class, 'show'])->where('reference', 'PUR-[0-9A-Z]{26}')->name('purchases.show');
     });
+
+    // Referral page (Phase 12): Subscribers, Vendors and Affiliates only (an API User gets a 404, checked in the
+    // controller). The first visit creates the Main Wallet and then the customer's referral code. Read-only otherwise.
+    Route::get('referrals', CustomerReferralController::class)->middleware('verified.optional')->name('referrals');
 
     Route::get('profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('profile', [ProfileController::class, 'update'])->name('profile.update');
@@ -368,6 +374,8 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::middleware([SystemPermission::AdminAccess->middleware(), SystemPermission::ReferralsView->middleware()])
             ->prefix('referrals')->name('referrals')->group(function () {
                 Route::get('/', [ReferralController::class, 'index']);
+                // Referral links, read-only: they are made only at signup, and staff can never add, change or remove one.
+                Route::get('links', [ReferralLinkController::class, 'index'])->name('.links');
                 Route::get('rates', [CommissionSettingController::class, 'index'])->name('.rates');
                 Route::middleware(SystemPermission::ReferralsManage->middleware())->group(function () {
                     Route::get('rates/{service:slug}/edit', [CommissionSettingController::class, 'edit'])->whereIn('service', QualifyingServices::SLUGS)

@@ -15,7 +15,7 @@ function navCustomer(array $attributes = []): User
 describe('navigation list', function () {
     it('contains only implemented customer pages', function () {
         expect(array_map(fn (CustomerNav $i) => $i->value, CustomerNav::cases()))
-            ->toBe(['dashboard', 'wallet', 'buy', 'purchases', 'account', 'security', 'email-verification']);
+            ->toBe(['dashboard', 'wallet', 'buy', 'purchases', 'referrals', 'account', 'security', 'email-verification']);
     });
 
     it('points every item at a registered route', function () {
@@ -30,14 +30,16 @@ describe('navigation list', function () {
     it('puts Dashboard, Wallet and Account in the main bar and the rest in the menu', function () {
         $user = navCustomer();
 
+        // Referrals (Phase 12) is a menu item for Subscribers, Vendors and Affiliates, never for API Users.
         expect(CustomerNav::primaryFor($user))->toBe([CustomerNav::Dashboard, CustomerNav::Wallet, CustomerNav::Account])
-            ->and(CustomerNav::menuFor($user))->toBe([CustomerNav::Security]);
+            ->and(CustomerNav::menuFor($user))->toBe([CustomerNav::Referrals, CustomerNav::Security])
+            ->and(CustomerNav::menuFor(navCustomer(['email' => 'api@example.com', 'user_type' => 'api_user'])))->toBe([CustomerNav::Security]);
     });
 
     it('adds Email verification to the menu only when verification is enabled', function () {
         config(['nadabo.require_email_verification' => true]);
 
-        expect(CustomerNav::menuFor(navCustomer()))->toBe([CustomerNav::Security, CustomerNav::EmailVerification]);
+        expect(CustomerNav::menuFor(navCustomer()))->toBe([CustomerNav::Referrals, CustomerNav::Security, CustomerNav::EmailVerification]);
     });
 });
 
@@ -93,13 +95,17 @@ describe('layout', function () {
             ->assertSee('href="'.route('verification.notice').'"', false);
     });
 
-    it('shows no future-module links or coming-soon placeholders', function () {
-        $html = mb_strtolower($this->actingAs(navCustomer())->get('/dashboard')->getContent());
+    it('shows no future-module links or coming-soon placeholders', function (string $type) {
+        // Referrals (Phase 12) appear only as the menu item of a Subscriber, Vendor or Affiliate, never for an API User.
+        $html = mb_strtolower($this->actingAs(navCustomer(['user_type' => $type]))->get('/dashboard')->getContent());
+        $menuItem = '/<a [^>]*data-customer-menu="referrals"[^>]*>.*?<\/a>/s';
+        expect(preg_match_all($menuItem, $html))->toBe($type === 'api_user' ? 0 : 2);
+        $html = preg_replace($menuItem, '', $html);
 
         foreach (['airtime', 'cable', 'electricity', 'deposit', 'referral', 'withdraw', 'payment', 'support', 'notification', 'coming soon', 'data plan', '/services'] as $word) {
             expect(str_contains($html, $word))->toBeFalse("found \"{$word}\"");
         }
-    });
+    })->with(['subscriber', 'vendor', 'affiliate', 'api_user']);
 
     it('uses the same navigation for every customer type', function (string $type) {
         $this->actingAs(navCustomer(['user_type' => $type]))->get('/dashboard')->assertOk()

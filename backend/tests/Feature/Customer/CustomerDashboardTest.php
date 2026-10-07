@@ -156,15 +156,20 @@ it('gives every customer type the same dashboard structure', function () {
     expect(array_unique(array_map('serialize', $structures)))->toHaveCount(1);
 });
 
-it('shows no deposit, purchase, service or future-module content', function () {
-    // The real wallet balance card exists since Phase 8; money actions and services do not.
-    $html = mb_strtolower($this->actingAs(dashCustomer())->get('/dashboard')->getContent());
+it('shows no deposit, purchase, service or future-module content', function (string $type) {
+    // The real wallet balance card exists since Phase 8; money actions and services do not. Referrals (Phase 12) appear
+    // only as the menu item of a Subscriber, Vendor or Affiliate (desktop and mobile menus), never as a dashboard card or
+    // shortcut, and not at all for an API User.
+    $html = mb_strtolower($this->actingAs(dashCustomer(['user_type' => $type]))->get('/dashboard')->getContent());
+    $menuItem = '/<a [^>]*data-customer-menu="referrals"[^>]*>.*?<\/a>/s';
+    expect(preg_match_all($menuItem, $html))->toBe($type === 'api_user' ? 0 : 2);
+    $html = preg_replace($menuItem, '', $html);
 
     foreach (['deposit', 'fund wallet', 'top up', 'transfer', 'airtime', 'data plan', 'buy data',
         'cable', 'electricity', 'bill', 'referral', 'commission', 'withdraw', 'payment', 'provider', 'service', 'coming soon'] as $word) {
         expect(str_contains($html, $word))->toBeFalse("found \"{$word}\"");
     }
-});
+})->with(['subscriber', 'vendor', 'affiliate', 'api_user']);
 
 it('never renders password hashes or tokens', function () {
     $user = dashCustomer(['password' => 'DashSecret123']);

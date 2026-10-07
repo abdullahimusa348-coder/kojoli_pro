@@ -12,6 +12,7 @@
         <x-input name="password" label="Password" type="password" autocomplete="new-password" required />
         <x-input name="password_confirmation" label="Confirm password" type="password" autocomplete="new-password" required />
         <p class="mb-6 text-xs text-navy-600">At least 8 characters, with upper and lower case letters and a number.</p>
+        <x-input name="referral_code" label="Referral code (optional)" :value="$referralCode ?? null" autocomplete="off" autocapitalize="characters" spellcheck="false" />
 
         <x-button>Create account</x-button>
     </form>
