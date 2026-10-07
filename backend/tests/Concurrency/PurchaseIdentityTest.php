@@ -301,6 +301,7 @@ it('refuses to roll back while a NIN purchase exists, leaving the schema and dat
     FakeProvider::$purchaseScript = ['succeeded'];
     FakeProvider::$resultScript = [FakeProvider::fixtureFields()]; // a NIN success needs its result (Phase 11 CP2)
     $nin = puxService()->purchase($user, pitNinPlan(), pitNumber(), null, 'nin', null, true);
+    pitRollBackAfter('2026_10_04_120000_create_purchase_results_table'); // later checkpoints first (Phase 12 on): nothing of theirs blocks it here
     $schema = pitSchema();
     $rows = pitRows();
     $results = DB::table('purchase_results')->orderBy('id')->get()->map(fn ($row) => (array) $row)->all();

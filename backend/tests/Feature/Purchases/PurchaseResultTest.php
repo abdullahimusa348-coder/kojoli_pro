@@ -50,9 +50,6 @@ require_once __DIR__.'/../../Support/Purchases/helpers.php';
 
 const PRT_MIGRATION = '2026_10_04_120000_create_purchase_results_table';
 
-/** The last CP1 migration: everything newer is CP2 or later. */
-const PRT_CP1_LAST = '2026_10_04_100100_create_purchase_identity_recipients_table';
-
 beforeEach(function () {
     puxDrivers();
     FakeProvider::$services = ['data', 'airtime', 'nin', 'bvn'];
@@ -687,10 +684,14 @@ describe('database', function () {
     });
 
     it('rolls back to exactly the schema before it when no result exists, and migrates again', function () {
+        $all = prtSchema();
+        $later = DB::table('migrations')->where('migration', '>', PRT_MIGRATION)->count();
+        if ($later > 0) {
+            Artisan::call('migrate:rollback', ['--step' => $later]); // later checkpoints first (Phase 12 on), newest first
+        }
         $cp2 = prtSchema();
 
-        $steps = DB::table('migrations')->where('migration', '>', PRT_CP1_LAST)->count();
-        Artisan::call('migrate:rollback', ['--step' => $steps]); // CP2 and every later checkpoint, newest first
+        Artisan::call('migrate:rollback', ['--step' => 1]); // then CP2 itself
 
         expect(Schema::hasTable('purchase_results'))->toBeFalse()
             ->and(DB::table('migrations')->where('migration', PRT_MIGRATION)->exists())->toBeFalse()
@@ -698,7 +699,7 @@ describe('database', function () {
 
         Artisan::call('migrate');
 
-        expect(prtSchema())->toEqual($cp2);
+        expect(prtSchema())->toEqual($all);
     });
 });
 
