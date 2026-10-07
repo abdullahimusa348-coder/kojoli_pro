@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\Auth\AdminSessionController;
+use App\Http\Controllers\Admin\CommissionSettingController;
 use App\Http\Controllers\Admin\CustomerController;
 use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
 use App\Http\Controllers\Admin\ModulePlaceholderController;
@@ -16,6 +17,7 @@ use App\Http\Controllers\Admin\ProviderCredentialController;
 use App\Http\Controllers\Admin\ProviderServiceController;
 use App\Http\Controllers\Admin\PurchaseController;
 use App\Http\Controllers\Admin\PurchaseIdentitySearchController;
+use App\Http\Controllers\Admin\ReferralController;
 use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\ServiceCategoryController;
 use App\Http\Controllers\Admin\ServiceController;
@@ -43,6 +45,7 @@ use App\Support\Admin\AdminModule;
 use App\Support\Enums\SystemPermission;
 use App\Support\Enums\UserType;
 use App\Support\Providers\CredentialKey;
+use App\Support\Referrals\QualifyingServices;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -357,6 +360,21 @@ Route::prefix('admin')->name('admin.')->group(function () {
             ->prefix('transactions')->name('transactions')->group(function () {
                 Route::get('/', [TransactionController::class, 'index']);
                 Route::get('{transaction}', [TransactionController::class, 'show'])->whereNumber('transaction')->name('.show');
+            });
+
+        // Referral & Commission (Phase 12): referrals.view; rate and cap changes need referrals.manage
+        // (also re-checked inside the action). Only the qualifying services' rates can be edited, chosen
+        // by catalog slug: Smile Data and every other service is a 404. No delete routes.
+        Route::middleware([SystemPermission::AdminAccess->middleware(), SystemPermission::ReferralsView->middleware()])
+            ->prefix('referrals')->name('referrals')->group(function () {
+                Route::get('/', [ReferralController::class, 'index']);
+                Route::get('rates', [CommissionSettingController::class, 'index'])->name('.rates');
+                Route::middleware(SystemPermission::ReferralsManage->middleware())->group(function () {
+                    Route::get('rates/{service:slug}/edit', [CommissionSettingController::class, 'edit'])->whereIn('service', QualifyingServices::SLUGS)
+                        ->name('.rates.edit');
+                    Route::put('rates/{service:slug}', [CommissionSettingController::class, 'update'])->whereIn('service', QualifyingServices::SLUGS)
+                        ->name('.rates.update');
+                });
             });
 
         // Modules not built yet: navigation placeholders only, no business logic.

@@ -835,13 +835,15 @@ describe('scope', function () {
             ->and(Permission::whereIn('name', ['referrals.view', 'referrals.manage'])->count())->toBe(2);
     });
 
-    it('adds no route, page, menu item or module yet', function () {
+    it('adds only the approved admin Referral & Commission routes and module (CP2), and no customer page or menu item', function () {
         $referralRoutes = collect(Route::getRoutes())->filter(fn ($route) => preg_match('/referral|commission/i', $route->uri().' '.$route->getName()))
-            ->map(fn ($route) => $route->uri())->values()->all();
+            ->map(fn ($route) => implode('|', $route->methods()).' '.$route->uri())->values()->all();
 
-        expect($referralRoutes)->toBe(['admin/referrals']) // the existing "not built yet" placeholder
-            ->and(AdminModule::Referrals->isBuilt())->toBeFalse()
-            ->and(AdminModule::Referrals->plannedPhase())->toBe(12)
+        expect($referralRoutes)->toBe([
+            'GET|HEAD admin/referrals', 'GET|HEAD admin/referrals/rates', 'GET|HEAD admin/referrals/rates/{service}/edit', 'PUT admin/referrals/rates/{service}',
+        ])
+            ->and(AdminModule::Referrals->isBuilt())->toBeTrue()
+            ->and(AdminModule::Referrals->plannedPhase())->toBeNull()
             ->and(array_filter(CustomerNav::cases(), fn (CustomerNav $item) => str_contains($item->value, 'referral')))->toBe([]);
     });
 
