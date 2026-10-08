@@ -209,6 +209,7 @@ describe('daily integrity schedule', function () {
             'purchases:reconcile' => '*/5 * * * *',
             'wallet:verify' => '0 0 * * *',
             'purchases:verify' => '0 0 * * *',
-        ])->and($expressions)->toHaveCount(6);
+            'commissions:verify' => '0 0 * * *', // Phase 12 CP4
+        ])->and($expressions)->toHaveCount(7);
     });
 });

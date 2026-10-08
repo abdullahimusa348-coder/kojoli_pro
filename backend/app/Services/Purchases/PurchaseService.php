@@ -22,6 +22,7 @@ use App\Services\Providers\Data\ProviderResultFields;
 use App\Services\Providers\ProviderAdapterRegistry;
 use App\Services\Providers\ProviderCaller;
 use App\Services\Providers\RouteCandidate;
+use App\Services\Referrals\CommissionService;
 use App\Services\Wallet\WalletService;
 use App\Support\Catalog\AmountType;
 use App\Support\MaintenanceMode;
@@ -79,6 +80,11 @@ use LogicException;
  * PIN) keeps no provider reference, as staff see references. Phone
  * purchases ignore any result fields.
  *
+ * Referral commission (Phase 12): in the transaction that marks a purchase
+ * successful, under its row lock, CommissionService pays the buyer's
+ * referrer when a commission is due, taking its locks before the purchase
+ * is written. It never changes the purchase.
+ *
  * Concurrency: creation locks the wallet row before inserting the purchase
  * (no shared-then-exclusive lock upgrade, so no deadlock between parallel
  * purchases); the purchase row lock serialises attempt creation and result
@@ -93,6 +99,7 @@ class PurchaseService
         private ProviderAdapterRegistry $registry,
         private ProviderCaller $caller,
         private WalletService $wallets,
+        private CommissionService $commissions,
     ) {}
 
     /** Creates (and debits) a purchase, then executes it. */
@@ -675,17 +682,21 @@ class PurchaseService
      * Marks a locked pending/review purchase successful through its delivering
      * attempt, with cost and margin from the route snapshot; the result of a
      * purchase that requires one (NIN, BVN, Exam PIN) is stored first, in the
-     * same transaction.
+     * same transaction. The buyer's referrer is paid their commission, if one
+     * is due, still in this transaction (Phase 12, CommissionService): its
+     * locks are taken before the purchase is written, the credit after; a
+     * commission that cannot be credited never undoes the success.
      */
     private function succeedLocked(Purchase $locked, PurchaseAttempt $attempt, PurchaseSource $source, ?SystemUser $actor = null,
         ?ProviderResultFields $fields = null, #[\SensitiveParameter] ?string $number = null): Purchase
     {
+        $commission = $this->commissions->prepare($locked);
         if ($locked->recipient_type->requiresResult()) {
             $this->storeResult($locked, $attempt, $fields, $number);
         }
         $cost = $attempt->costKobo($locked->face_value_kobo);
 
-        return $this->transition($locked, PurchaseStatus::Successful, $source, [
+        $this->transition($locked, PurchaseStatus::Successful, $source, [
             'successful_attempt_id' => $attempt->id,
             'cost_kobo' => $cost,
             'margin_kobo' => $cost === null ? null : $locked->amount_kobo - $cost,
@@ -693,6 +704,9 @@ class PurchaseService
             'next_check_at' => null,
             'completed_at' => now(),
         ], $actor);
+        $this->commissions->settle($locked, $commission);
+
+        return $locked;
     }
 
     /**

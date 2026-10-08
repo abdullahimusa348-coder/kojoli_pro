@@ -21,7 +21,7 @@ Schedule::command('purchases:reconcile')->everyFiveMinutes()->withoutOverlapping
 
 // Integrity checks, daily. They report only and never repair: a run that finds
 // problems is logged as an error; run the command manually to see the details.
-foreach (['wallet:verify', 'purchases:verify'] as $check) {
+foreach (['wallet:verify', 'purchases:verify', 'commissions:verify'] as $check) {
     Schedule::command($check)->daily()
         ->onFailure(fn () => Log::error('Scheduled integrity check found problems', ['command' => $check]));
 }

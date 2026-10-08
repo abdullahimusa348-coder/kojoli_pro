@@ -369,7 +369,7 @@ describe('guards', function () {
         $history = tap(rftChange($setting))->save();
         $commission = tap(rftCommission($referrer, $purchase))->save();
         $action = tap(rftCancellation($commission, $staff))->save();
-        [$referrer2, , $purchase2] = rftReferredPurchase();
+        [$referrer2, , $purchase2] = rftReferredPurchase('airtime'); // no Airtime rate: CP4 pays it nothing, so its failed attempt can be built here
         $attempt = tap(rftAttempt($purchase2, $referrer2))->save();
         $rows = rftRows();
 
