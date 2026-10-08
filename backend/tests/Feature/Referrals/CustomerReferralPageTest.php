@@ -301,7 +301,7 @@ describe('page', function () {
         }
         expect(substr_count($html, 'data-referred-customer>'))->toBe(2)
             ->and(substr_count($html, 'data-referred-customer'))->toBe(2)
-            ->and(array_keys($response->original->getData()))->toBe(['code', 'link', 'figures', 'history'])
+            ->and(array_keys($response->original->getData()))->toBe(['code', 'link', 'figures', 'history', 'commissions'])
             ->and($response->viewData('figures'))->toBe(['referred' => 2, 'successful' => 1, 'earned_kobo' => 0, 'this_month_kobo' => 0])
             ->and($response->viewData('history')->items())->toBe([['joined' => '6 Oct 2026', 'status' => 'Disabled'], ['joined' => '1 Apr 2026', 'status' => 'Active']]);
 

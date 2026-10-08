@@ -91,8 +91,8 @@ it('searches by either customer\'s name or email, or by the referrer\'s code in 
 it('sits between Commissions and Rates & caps', function () {
     $html = $this->actingAs(rlaStaff(), 'admin')->get('/admin/referrals/links')->getContent();
 
-    expect(preg_match_all('/data-referrals-tab="([a-z]+)"/', $html, $tabs))->toBe(3)
-        ->and($tabs[1])->toBe(['commissions', 'links', 'rates'])
+    expect(preg_match_all('/data-referrals-tab="([a-z]+)"/', $html, $tabs))->toBe(4)
+        ->and($tabs[1])->toBe(['commissions', 'links', 'rates', 'failed'])
         ->and(preg_match('/<a [^>]*data-referrals-tab="links"[^>]*aria-current="page"/', $html))->toBe(1);
 });
 

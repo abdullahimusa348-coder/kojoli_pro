@@ -10,7 +10,7 @@
     <form method="GET" action="{{ route('admin.referrals') }}" class="mt-6 flex flex-col gap-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-navy-100 sm:flex-row sm:items-end" role="search">
         <div class="min-w-0 flex-1">
             <label for="q" class="mb-1 block text-xs font-medium text-navy-700">Search</label>
-            <input id="q" name="q" type="search" value="{{ $filters['q'] ?? '' }}" placeholder="Commission or purchase reference, referrer name or email"
+            <input id="q" name="q" type="search" value="{{ $filters['q'] ?? '' }}" placeholder="{{ $canViewCustomers ? 'Commission or purchase reference, referrer name or email' : 'Commission or purchase reference' }}"
                    class="block w-full rounded-lg border border-navy-200 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-200">
         </div>
         <div class="flex gap-2">
@@ -35,8 +35,12 @@
                         </div>
                         <div class="min-w-0">
                             <p class="text-xs font-medium text-navy-500">Referrer</p>
-                            <p class="truncate font-semibold text-navy-900">{{ $commission->referrer->name }}</p>
-                            <p class="truncate text-navy-600">{{ $commission->referrer->email }}</p>
+                            @if ($canViewCustomers)
+                                <p class="truncate font-semibold text-navy-900">{{ $commission->referrer->name }}</p>
+                                <p class="truncate text-navy-600">{{ $commission->referrer->email }}</p>
+                            @else
+                                <p class="truncate font-semibold text-navy-900">Customer #{{ $commission->referrer->id }}</p>
+                            @endif
                         </div>
                         <div class="flex items-center justify-between gap-3 md:block md:text-right">
                             <p class="font-semibold tabular-nums text-navy-900" data-commission-amount>{{ \App\Support\Money::format($commission->amount_kobo) }}</p>

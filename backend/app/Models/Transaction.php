@@ -15,7 +15,9 @@ use LogicException;
  * A customer transaction: one financial operation as the customer sees it,
  * owning its ledger entries. Only the status (along allowed transitions),
  * completed_at and updated_at may change after creation; the reference,
- * amount, wallet, direction, type and idempotency key are immutable. Never
+ * amount, wallet, direction, type and idempotency key are immutable. A
+ * referral commission transaction (its credit and its reversal debit) is
+ * never reversed: a commission changes only through its own action. Never
  * deleted.
  */
 class Transaction extends Model
@@ -36,6 +38,9 @@ class Transaction extends Model
                 $from = TransactionStatus::from($transaction->getRawOriginal('status'));
                 if (! $from->canTransitionTo($transaction->status)) {
                     throw new InvalidTransactionState("A {$from->value} transaction cannot become {$transaction->status->value}.");
+                }
+                if ($transaction->type === TransactionType::Commission && $transaction->status === TransactionStatus::Reversed) {
+                    throw new InvalidTransactionState('A commission transaction is never reversed: a commission changes only through its own action.');
                 }
             }
         });

@@ -842,7 +842,7 @@ describe('scope', function () {
         expect($referralRoutes)->toBe([
             'GET|HEAD referrals', 'GET|HEAD admin/referrals', 'GET|HEAD admin/referrals/commissions/{commission}',
             'POST admin/referrals/commissions/{commission}/reverse', 'POST admin/referrals/commissions/{commission}/cancel', // CP5
-            'GET|HEAD admin/referrals/links', 'GET|HEAD admin/referrals/rates',
+            'GET|HEAD admin/referrals/links', 'GET|HEAD admin/referrals/failed', 'GET|HEAD admin/referrals/rates', // F2: read-only Failed attempts tab
             'GET|HEAD admin/referrals/rates/{service}/edit', 'PUT admin/referrals/rates/{service}',
         ])
             ->and(AdminModule::Referrals->isBuilt())->toBeTrue()

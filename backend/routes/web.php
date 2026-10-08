@@ -5,6 +5,7 @@ use App\Http\Controllers\Admin\CommissionController;
 use App\Http\Controllers\Admin\CommissionSettingController;
 use App\Http\Controllers\Admin\CustomerController;
 use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
+use App\Http\Controllers\Admin\FailedCommissionAttemptController;
 use App\Http\Controllers\Admin\ModulePlaceholderController;
 use App\Http\Controllers\Admin\PaymentController;
 use App\Http\Controllers\Admin\PaymentGatewayController;
@@ -386,6 +387,8 @@ Route::prefix('admin')->name('admin.')->group(function () {
                 });
                 // Referral links, read-only: they are made only at signup, and staff can never add, change or remove one.
                 Route::get('links', [ReferralLinkController::class, 'index'])->name('.links');
+                // Failed Commission Attempts, read-only (referrals.view): append-only, nothing here retries, changes or removes one.
+                Route::get('failed', [FailedCommissionAttemptController::class, 'index'])->name('.failed');
                 Route::get('rates', [CommissionSettingController::class, 'index'])->name('.rates');
                 Route::middleware(SystemPermission::ReferralsManage->middleware())->group(function () {
                     Route::get('rates/{service:slug}/edit', [CommissionSettingController::class, 'edit'])->whereIn('service', QualifyingServices::SLUGS)

@@ -39,9 +39,9 @@ use Throwable;
  * in review, failed or already successful. Two steps:
  *
  * prepare(), before the purchase is written:
- * 1. Two facts that never change are checked first, without locks: the
- *    purchase is of a qualifying service, and its buyer has a referral link.
- *    Otherwise nothing happens.
+ * 1. Two facts that never change are read first, without locks: the buyer's
+ *    referral link (which names the referrer), then the purchase's service,
+ *    which must be a qualifying one. Otherwise nothing happens.
  * 2. Everything else runs in a savepoint, taking its locks in the approved
  *    order: the referrer's Main Wallet (exclusive; found by a plain read, so
  *    only an existing row is ever locked), the buyer's and then the
@@ -64,15 +64,17 @@ use Throwable;
  *    down) is credited to the referrer's Main Wallet through WalletService
  *    ("Referral commission", key commission:{purchase}, no actor, no
  *    metadata) and recorded with the rate and cap it used, in a savepoint.
- * 5. Any other error, in either step, rolls its savepoint back (nothing
- *    credited or recorded) and becomes a Failed Commission Attempt (purchase,
- *    referrer, reason code and time only), written in its own savepoint; the
- *    purchase stays successful. A database abort (deadlock, lock wait
- *    timeout, lost connection, a transaction the server rolled back) is never
- *    recorded: it is passed on, so the whole success is retried, or settled
- *    later by the purchase re-checks. Nothing is retried here; staff may
- *    compensate with a wallet adjustment. Logs name the purchase reference
- *    and the reason code only.
+ * 5. Any other error, in the reads or in either step, rolls back what its
+ *    step did (nothing credited or recorded) and becomes a Failed Commission
+ *    Attempt (purchase, referrer, reason code and time only), written in its
+ *    own savepoint; the purchase stays successful. The one error with no
+ *    referrer to name is a failure to read the referral link itself: nothing
+ *    is recorded (an attempt needs its referrer), and an error is logged. A
+ *    database abort (deadlock, lock wait timeout, lost connection, a
+ *    transaction the server rolled back) is never recorded: it is passed on,
+ *    so the whole success is retried, or settled later by the purchase
+ *    re-checks. Nothing is retried here; staff may compensate with a wallet
+ *    adjustment. Logs name the purchase reference and the reason code only.
  */
 class CommissionService
 {
@@ -84,31 +86,41 @@ class CommissionService
 
     /**
      * Step 1, for a pending or review purchase about to be marked successful, under its row lock and before it is
-     * written: the checks and the locks. Null when no commission is due.
+     * written: the checks and the locks. Null when no commission is due. Any error in here other than a database
+     * abort is contained (step 5 of the class docblock): the purchase succeeds regardless.
      */
     public function prepare(Purchase $locked): ?PreparedCommission
     {
         if (! in_array($locked->status, [PurchaseStatus::Pending, PurchaseStatus::Review], true)) {
             return null; // only a purchase that is succeeding now: a later call never evaluates a purchase again
         }
-        if (! QualifyingServices::includes(Service::whereKey($locked->service_id)->value('slug'))) {
-            return null;
-        }
-        $referrerId = Referral::where('referred_user_id', $locked->user_id)->value('referrer_id');
-        if ($referrerId === null) {
-            return null;
-        }
 
         $level = DB::transactionLevel();
+        $referrerId = null;
         try {
-            return DB::transaction(fn () => $this->decide($locked, (int) $referrerId));
+            $referrerId = Referral::where('referred_user_id', $locked->user_id)->value('referrer_id');
+            if ($referrerId === null) {
+                return null;
+            }
+            $referrerId = (int) $referrerId;
+            if (! QualifyingServices::includes(Service::whereKey($locked->service_id)->value('slug'))) {
+                return null;
+            }
+
+            return DB::transaction(fn () => $this->decide($locked, $referrerId));
         } catch (Throwable $e) {
             if ($this->aborted($e, $level)) {
                 throw $e;
             }
-            $this->holdReferrer((int) $referrerId, $level);
+            if ($referrerId === null) {
+                // The referral link could not be read, so there is no referrer for an attempt to name: nothing is recorded.
+                Log::error('Referral commission could not be checked', ['purchase' => $locked->reference, 'reason' => CommissionFailureReason::UnexpectedError->value]);
 
-            return PreparedCommission::failed((int) $referrerId, $this->reasonFor($e));
+                return null;
+            }
+            $this->holdReferrer($referrerId, $level);
+
+            return PreparedCommission::failed($referrerId, $this->reasonFor($e));
         }
     }
 

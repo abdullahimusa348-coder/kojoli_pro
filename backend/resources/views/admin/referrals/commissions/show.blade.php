@@ -32,10 +32,10 @@
             <div><dt class="text-navy-600">Referrer</dt><dd class="mt-0.5 min-w-0 text-navy-900" data-commission-referrer>
                 @if ($canViewCustomers)
                     <a href="{{ route('admin.users.show', $commission->referrer) }}" class="break-words font-medium text-brand-700 hover:underline">{{ $commission->referrer->name }}</a>
+                    <span class="block break-all text-xs text-navy-500">{{ $commission->referrer->email }} · Customer #{{ $commission->referrer->id }}</span>
                 @else
-                    <span class="break-words font-medium">{{ $commission->referrer->name }}</span>
+                    <span class="break-words font-medium">Customer #{{ $commission->referrer->id }}</span>
                 @endif
-                <span class="block break-all text-xs text-navy-500">{{ $commission->referrer->email }} · Customer #{{ $commission->referrer->id }}</span>
             </dd></div>
             <div><dt class="text-navy-600">Purchase</dt><dd class="mt-0.5 min-w-0 text-navy-900" data-commission-purchase>
                 @if ($canViewPurchases)

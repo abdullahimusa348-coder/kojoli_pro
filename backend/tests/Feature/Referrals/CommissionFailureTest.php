@@ -6,19 +6,23 @@ use App\Models\Commission;
 use App\Models\CommissionSetting;
 use App\Models\FailedCommissionAttempt;
 use App\Models\Purchase;
+use App\Models\PurchaseResult;
 use App\Models\SystemUser;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Models\Wallet;
 use App\Models\WalletLedgerEntry;
+use App\Services\Referrals\CommissionService;
 use App\Services\Wallet\WalletService;
 use App\Support\Enums\UserStatus;
 use App\Support\Enums\UserType;
+use App\Support\Purchases\PurchaseAttemptStatus;
 use App\Support\Purchases\PurchaseStatus;
 use App\Support\Referrals\CommissionFailureReason;
 use App\Support\Wallet\LedgerEntryType;
 use App\Support\Wallet\TransactionType;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 
 require_once __DIR__.'/../../Support/Referrals/helpers.php';
@@ -75,6 +79,45 @@ function cftFailedWith(Purchase $purchase, User $referrer, CommissionFailureReas
         ->and(FailedCommissionAttempt::sole()->only(['purchase_id', 'referrer_id', 'reason_code']))
         ->toBe(['purchase_id' => $purchase->id, 'referrer_id' => $referrer->id, 'reason_code' => $reason])
         ->and(Commission::count())->toBe(0);
+}
+
+/**
+ * Fails the read of $sql (the query text) that the commission step makes in prepare(), while cftArmed(). Only that read:
+ * the same text elsewhere (a purchase's creation reads its service slug too) is never affected.
+ */
+function cftFailPrepareRead(string $sql, Throwable $error): void
+{
+    DB::beforeExecuting(function (string $query) use ($sql, $error) {
+        if (! cftArmed() || ! str_starts_with($query, $sql)) {
+            return;
+        }
+        foreach (debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS) as $frame) {
+            if (($frame['class'] ?? null) === CommissionService::class && ($frame['function'] ?? null) === 'prepare') {
+                throw $error;
+            }
+        }
+    });
+}
+
+/**
+ * A ₦500 purchase of $slug of $buyer's that succeeds: at once, or after an unclear answer and a re-check. The failure is
+ * armed through the success; the hook only ever fails the commission step's read, so the purchase's own creation is unaffected.
+ */
+function cftSucceeding(User $buyer, bool $atOnce, string $slug = 'data'): Purchase
+{
+    if ($atOnce) {
+        cftArmed(true);
+        $purchase = cmxBuy($buyer, cmxPlan($slug, 50_000));
+        cftArmed(false);
+
+        return $purchase;
+    }
+    $purchase = cmxBuy($buyer, cmxPlan($slug, 50_000), 'timeout');
+    cftArmed(true);
+    cmxRecheck($purchase);
+    cftArmed(false);
+
+    return $purchase;
 }
 
 it('records wallet_unavailable when the referrer has no Main Wallet, keeps the purchase successful, and never retries it', function () {
@@ -220,3 +263,77 @@ it('passes on a database abort while writing the failed attempt, recording nothi
 
     expect(FailedCommissionAttempt::count())->toBe(0)->and(Commission::count())->toBe(0)->and(cftCommissionLogs($logs))->toBe([]);
 });
+
+// Remediation 1 (F3): the two reads that name the referrer and the qualifying service are contained like the rest of the step.
+
+it('keeps the purchase successful, with no commission and no credit, when reading the service slug fails: one unexpected_error attempt names the referrer', function (bool $atOnce, string $slug) {
+    $logs = cmxRecordLogs();
+    $referrer = cmxReferrer();
+    cmxSetting($slug, 250, 100_000);
+    $buyer = cmxReferred($referrer);
+    cftFailPrepareRead('select "slug" from "services"', new RuntimeException('Unexpected test failure'));
+
+    $purchase = cftSucceeding($buyer, $atOnce, $slug);
+
+    cftFailedWith($purchase, $referrer, CommissionFailureReason::UnexpectedError);
+    expect($purchase->fresh()->successful_attempt_id)->not->toBeNull() // the purchase's own success is kept, not rolled back
+        ->and($purchase->fresh()->successfulAttempt->status)->toBe(PurchaseAttemptStatus::Succeeded)
+        ->and(PurchaseResult::where('purchase_id', $purchase->id)->count())->toBe($slug === 'nin' ? 1 : 0) // a stored result stays
+        ->and(Transaction::where('type', TransactionType::Commission->value)->count())->toBe(0)
+        ->and(WalletLedgerEntry::where('entry_type', LedgerEntryType::CommissionCredit->value)->count())->toBe(0)
+        ->and(cmxBalance($referrer))->toBe(0)
+        ->and(cmxBalance($buyer))->toBe(1_000_000 - $purchase->amount_kobo)
+        ->and(cftCommissionLogs($logs))->toBe(['Referral commission not credited {"purchase":"'.$purchase->reference.'","reason":"unexpected_error"}']);
+    cmxClean();
+})->with([
+    'the purchase succeeds at once' => [true, 'data'],
+    'the purchase is re-checked later' => [false, 'data'],
+    'a NIN purchase succeeds at once, storing its result' => [true, 'nin'],
+]);
+
+it('keeps the purchase successful, with no commission and no credit, when reading the referral link fails: nothing names the referrer, so only an error is logged', function (bool $atOnce, string $slug) {
+    $logs = cmxRecordLogs();
+    $referrer = cmxReferrer();
+    cmxSetting($slug, 250, 100_000);
+    $buyer = cmxReferred($referrer);
+    cftFailPrepareRead('select "referrer_id" from "referrals"', new RuntimeException('Unexpected test failure'));
+
+    $purchase = cftSucceeding($buyer, $atOnce, $slug);
+
+    expect($purchase->fresh()->status)->toBe(PurchaseStatus::Successful)
+        ->and($purchase->fresh()->successful_attempt_id)->not->toBeNull() // the purchase's own success is kept, not rolled back
+        ->and($purchase->fresh()->successfulAttempt->status)->toBe(PurchaseAttemptStatus::Succeeded)
+        ->and(PurchaseResult::where('purchase_id', $purchase->id)->count())->toBe($slug === 'nin' ? 1 : 0) // a stored result stays
+        ->and(FailedCommissionAttempt::count())->toBe(0) // no referrer is known, so no attempt can name one
+        ->and(Commission::count())->toBe(0)
+        ->and(Transaction::where('type', TransactionType::Commission->value)->count())->toBe(0)
+        ->and(WalletLedgerEntry::where('entry_type', LedgerEntryType::CommissionCredit->value)->count())->toBe(0)
+        ->and(cmxBalance($referrer))->toBe(0)
+        ->and(cmxBalance($buyer))->toBe(1_000_000 - $purchase->amount_kobo)
+        ->and(cftCommissionLogs($logs))->toBe(['Referral commission could not be checked {"purchase":"'.$purchase->reference.'","reason":"unexpected_error"}']);
+    cmxClean();
+})->with([
+    'the purchase succeeds at once' => [true, 'data'],
+    'the purchase is re-checked later' => [false, 'data'],
+    'a NIN purchase succeeds at once, storing its result' => [true, 'nin'],
+]);
+
+it('passes on a database abort from either read: nothing is recorded, and the purchase is left as it was', function (string $sql) {
+    $logs = cmxRecordLogs();
+    [, $purchase] = cftUnclear();
+    $before = $purchase->fresh()->status;
+    cftFailPrepareRead($sql, cmxDatabaseError('40001', 'Serialization failure: 1213 Deadlock found when trying to get lock; try restarting transaction'));
+    cftArmed(true);
+
+    expect(fn () => cmxRecheck($purchase))->toThrow(PDOException::class);
+    cftArmed(false);
+
+    expect($purchase->fresh()->status)->toBe($before)
+        ->and(FailedCommissionAttempt::count())->toBe(0)
+        ->and(Commission::count())->toBe(0)
+        ->and(Transaction::where('type', TransactionType::Commission->value)->count())->toBe(0)
+        ->and(cftCommissionLogs($logs))->toBe([]);
+})->with([
+    'reading the service slug' => ['select "slug" from "services"'],
+    'reading the referral link' => ['select "referrer_id" from "referrals"'],
+]);

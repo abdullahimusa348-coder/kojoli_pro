@@ -13,11 +13,13 @@ use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 
 /**
- * A referrer's figures and anonymous referral history for their Referral
+ * A referrer's figures, anonymous referral history and commission history for their Referral
  * page (Phase 12). Read-only and always derived from the records as they
- * are now: nothing is stored or written here. The history reads only each
+ * are now: nothing is stored or written here. The referral history reads only each
  * referred customer's join date and account status, never a name, email,
- * phone or id, and hands the page plain values.
+ * phone or id. The commission history reads only the credit date, the original
+ * amount and the status as it is now: never a reference, a buyer, a staff member,
+ * a reason or a wallet transaction. Both hand the page plain values.
  */
 class ReferralSummary
 {
@@ -64,5 +66,34 @@ class ReferralSummary
                 'joined' => CarbonImmutable::parse($row->getAttribute('joined_at'), config('app.timezone'))->setTimezone($zone)->format('j M Y'),
                 'status' => UserStatus::from($row->getAttribute('account_status'))->label(),
             ]);
+    }
+
+    /**
+     * The commissions $referrer earned, newest credit first: the credit date (Business timezone), the original amount
+     * and the status as it is now. A reversed or cancelled commission stays listed, at its original amount.
+     *
+     * @return LengthAwarePaginator<int, array{date: string, amount_kobo: int, status: string, status_key: string}>
+     */
+    public function commissions(User $referrer): LengthAwarePaginator
+    {
+        $zone = BusinessTime::timezone();
+
+        return Commission::query()
+            ->with('action:id,commission_id,type')
+            ->where('referrer_id', $referrer->id)
+            ->orderByDesc('credited_at')
+            ->orderByDesc('id')
+            ->paginate(self::PER_PAGE, ['id', 'amount_kobo', 'credited_at'], 'commissions')
+            ->withQueryString()
+            ->through(function (Commission $commission) use ($zone) {
+                $status = $commission->status();
+
+                return [
+                    'date' => CarbonImmutable::instance($commission->credited_at)->setTimezone($zone)->format('j M Y'),
+                    'amount_kobo' => $commission->amount_kobo,
+                    'status' => $status->label(),
+                    'status_key' => $status->value,
+                ];
+            });
     }
 }

@@ -68,4 +68,26 @@
             @include('admin.services.partials.pagination', ['paginator' => $history])
         @endif
     </section>
+
+    <section class="mt-6 overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-navy-100" aria-labelledby="commissions-heading" data-commission-history>
+        <h2 id="commissions-heading" class="border-b border-navy-100 px-5 py-3 text-base font-semibold text-navy-900">Commission history</h2>
+        <p class="border-b border-navy-100 px-5 py-2 text-xs text-navy-500">Each line shows the amount originally credited. A reversed or cancelled commission stays listed, with its status.</p>
+        @if ($commissions->isEmpty())
+            <p class="px-5 py-6 text-sm text-navy-500" data-commission-empty>No commissions yet. A commission appears here when a customer you referred makes a qualifying purchase.</p>
+        @else
+            <ul class="divide-y divide-navy-100" role="list">
+                @foreach ($commissions as $commission)
+                    <li class="flex flex-wrap items-center justify-between gap-2 px-5 py-3 text-sm" data-commission-row>
+                        <div class="min-w-0">
+                            <p class="text-navy-900" data-commission-date>{{ $commission['date'] }}</p>
+                            <p class="font-semibold tabular-nums text-navy-900" data-commission-amount>{{ $money($commission['amount_kobo']) }}</p>
+                        </div>
+                        <span @class(['rounded-full px-2.5 py-1 text-xs font-medium', 'bg-green-50 text-green-800' => $commission['status_key'] === 'credited', 'bg-navy-100 text-navy-700' => $commission['status_key'] !== 'credited'])
+                              data-commission-status="{{ $commission['status_key'] }}">{{ $commission['status'] }}</span>
+                    </li>
+                @endforeach
+            </ul>
+            @include('admin.services.partials.pagination', ['paginator' => $commissions])
+        @endif
+    </section>
 @endsection
