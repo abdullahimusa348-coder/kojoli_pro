@@ -1,6 +1,7 @@
 <?php
 
 use App\Actions\Admin\Purchases\RecheckPurchase;
+use App\Models\Commission;
 use App\Models\CommissionSetting;
 use App\Models\Plan;
 use App\Models\PlanPrice;
@@ -14,6 +15,10 @@ use App\Models\Wallet;
 use App\Services\Wallet\WalletService;
 use App\Support\Enums\UserType;
 use App\Support\Purchases\PurchaseSource;
+use App\Support\Referrals\CommissionActionToken;
+use App\Support\Referrals\CommissionActionType;
+use App\Support\Wallet\LedgerEntryType;
+use App\Support\Wallet\TransactionType;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Database\QueryException;
 use Illuminate\Log\Events\MessageLogged;
@@ -21,6 +26,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
+use Spatie\Permission\Models\Role;
 use Tests\Support\Providers\FakeProvider;
 
 require_once __DIR__.'/../Purchases/helpers.php';
@@ -129,6 +135,49 @@ function cmxStaff(): SystemUser
     $staff->assignRole('super-admin');
 
     return $staff;
+}
+
+/** Staff with a custom role holding exactly $permissions. */
+function cmxStaffWith(array $permissions): SystemUser
+{
+    (new RolesAndPermissionsSeeder)->run();
+    $role = Role::create(['name' => 'CMX '.Str::random(8), 'guard_name' => 'admin'])->givePermissionTo($permissions);
+    $staff = SystemUser::factory()->create();
+    $staff->assignRole($role->name);
+
+    return $staff;
+}
+
+/**
+ * A credited commission (CP4): a referred customer's successful ₦500 Data purchase at 2.5%, so 1,250 kobo, credited to
+ * $referrer (a new customer with a Main Wallet when null), whose wallet first gets $balanceKobo by a test adjustment.
+ *
+ * @return array{0: User, 1: Commission}
+ */
+function cmxCommission(int $balanceKobo = 0, ?User $referrer = null): array
+{
+    $referrer ??= cmxReferrer();
+    if ($balanceKobo > 0) {
+        $wallets = app(WalletService::class);
+        $wallets->credit($wallets->walletFor($referrer), $balanceKobo, LedgerEntryType::AdjustmentCredit, TransactionType::Adjustment, 'Test funding');
+    }
+    cmxSetting('data', 250, 100_000);
+    $purchase = cmxBuy(cmxReferred($referrer), cmxPlan('data', 50_000));
+
+    return [$referrer, Commission::where('purchase_id', $purchase->id)->sole()];
+}
+
+/** The form fields of a commission's Reverse or Cancel form, with a fresh one-time token for $staff. */
+function cmxActionForm(Commission $commission, CommissionActionType $type, SystemUser $staff, array $overrides = []): array
+{
+    return $overrides + ['reason' => 'Taken back after a review of the purchase.', 'confirm' => '1',
+        'token' => CommissionActionToken::issue($commission, $type, $staff)];
+}
+
+/** The route a commission's $type form posts to. */
+function cmxActionUrl(Commission $commission, CommissionActionType $type): string
+{
+    return route($type === CommissionActionType::Reversal ? 'admin.referrals.commissions.reverse' : 'admin.referrals.commissions.cancel', $commission);
 }
 
 function cmxBalance(User $user): int

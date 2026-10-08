@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\Commission;
+use App\Models\CommissionAction;
 use App\Models\FailedCommissionAttempt;
 use App\Models\Purchase;
 use App\Models\Referral;
@@ -11,6 +12,7 @@ use App\Models\Transaction;
 use App\Support\Money;
 use App\Support\Pricing\BasisPoints;
 use App\Support\Purchases\PurchaseStatus;
+use App\Support\Referrals\CommissionActionType;
 use App\Support\Referrals\CommissionFailureReason;
 use App\Support\Referrals\QualifyingServices;
 use App\Support\Wallet\Direction;
@@ -36,10 +38,15 @@ use Illuminate\Support\Facades\DB;
  *   Wallet, with its time of credit, and has one successful commission
  *   credit of its amount, posted for its purchase (one ledger entry); its
  *   purchase has no failed attempt.
+ * - Its action, if it has one (CP5), is on its wallet with a reason of 10 to
+ *   500 characters: a reversal with one separate, successful commission
+ *   reversal debit of the full amount, posted for this commission (one
+ *   ledger entry), the original credit unchanged; a cancellation with none.
  * - A failed attempt has a fixed reason code, belongs to a successful
  *   purchase, names the buyer's referrer, and its purchase has no commission.
- * - No commission credit belongs to no commission, and the commission
- *   credits add up to the commissions.
+ * - No commission credit belongs to no commission and no reversal debit to
+ *   no reversal; the commission credits add up to the commissions, and the
+ *   reversal debits to the reversed commissions.
  */
 class VerifyCommissionsCommand extends Command
 {
@@ -74,7 +81,8 @@ class VerifyCommissionsCommand extends Command
         [$commissions, $attempts, $problems] = [0, 0, []];
 
         Commission::query()
-            ->with(['purchase:id,reference,user_id,service_id,status,amount_kobo', 'wallet:id,user_id,type', 'creditTransaction.entries'])
+            ->with(['purchase:id,reference,user_id,service_id,status,amount_kobo', 'wallet:id,user_id,type', 'creditTransaction.entries',
+                'action.reversalTransaction.entries'])
             ->chunkById(200, function (Collection $chunk) use ($slugs, &$commissions, &$problems) {
                 $purchases = $chunk->pluck('purchase')->filter();
                 $referrers = $this->referrersOf($purchases);
@@ -153,7 +161,7 @@ class VerifyCommissionsCommand extends Command
             $problems[] = "{$label}: has no time of credit.";
         }
 
-        return [...$problems, ...$this->creditProblems($label, $commission, $purchase)];
+        return [...$problems, ...$this->creditProblems($label, $commission, $purchase), ...$this->actionProblems($label, $commission)];
     }
 
     /** @return list<string> */
@@ -192,6 +200,49 @@ class VerifyCommissionsCommand extends Command
     }
 
     /**
+     * The commission's action, if it has one. Never prints the reason.
+     *
+     * @return list<string>
+     */
+    private function actionProblems(string $label, Commission $commission): array
+    {
+        $action = $commission->action;
+        if ($action === null) {
+            return [];
+        }
+        $type = CommissionActionType::tryFrom((string) $action->getRawOriginal('type'));
+        $label .= ": its action {$action->reference}";
+        $problems = [];
+
+        if ((int) $action->wallet_id !== $commission->wallet_id) {
+            $problems[] = "{$label} is not on the commission's wallet.";
+        }
+        $length = mb_strlen((string) $action->reason);
+        if ($length < 10 || $length > 500) {
+            $problems[] = "{$label} has no reason of 10 to 500 characters.";
+        }
+        if ($type === null) {
+            $problems[] = "{$label} is neither a reversal nor a cancellation.";
+        } elseif ($type === CommissionActionType::Cancellation && $action->reversal_transaction_id !== null) {
+            $problems[] = "{$label} is a cancellation with a wallet transaction, but a cancellation moves no money.";
+        } elseif ($type === CommissionActionType::Reversal) {
+            $debit = $action->reversalTransaction;
+            $entry = $debit?->entries->first();
+            if ($debit === null || $debit->id === $commission->credit_transaction_id || $debit->type !== TransactionType::Commission
+                || $debit->direction !== Direction::Debit || $debit->status !== TransactionStatus::Successful || $debit->amount_kobo !== $commission->amount_kobo
+                || (int) $debit->wallet_id !== $commission->wallet_id || (int) $debit->user_id !== $commission->referrer_id
+                || $debit->idempotency_key !== 'commission-reversal:'.$commission->reference || $debit->entries->count() !== 1
+                || $entry->entry_type !== LedgerEntryType::CommissionReversal || $entry->direction !== Direction::Debit
+                || $entry->amount_kobo !== $commission->amount_kobo || $entry->reverses_entry_id !== null) {
+                $problems[] = "{$label} is a reversal without one separate, successful commission reversal debit of the commission amount, posted for this commission"
+                    .($debit === null ? '.' : " ({$debit->reference}).");
+            }
+        }
+
+        return $problems;
+    }
+
+    /**
      * @param  array<int, int>  $referrers
      * @param  array<int, int>  $paid
      * @return list<string>
@@ -222,7 +273,7 @@ class VerifyCommissionsCommand extends Command
     }
 
     /**
-     * Commission credits that belong to no commission, and the totals.
+     * Commission credits that belong to no commission, reversal debits that belong to no reversal, and the totals.
      *
      * @return list<string>
      */
@@ -240,6 +291,19 @@ class VerifyCommissionsCommand extends Command
         $recorded = (int) Commission::query()->sum('amount_kobo');
         if ($credited !== $recorded) {
             $problems[] = 'Totals: successful commission credits add up to '.Money::format($credited).', but commissions add up to '.Money::format($recorded).'.';
+        }
+
+        $debits = fn () => Transaction::query()->where('type', TransactionType::Commission->value)->where('direction', Direction::Debit->value);
+        $unlinked = $debits()->whereNotIn('id', CommissionAction::query()->whereNotNull('reversal_transaction_id')->select('reversal_transaction_id'))
+            ->orderBy('id')->pluck('reference');
+        foreach ($unlinked as $reference) {
+            $problems[] = "Transaction {$reference}: a commission reversal debit that belongs to no reversal.";
+        }
+
+        $debited = (int) $debits()->where('status', TransactionStatus::Successful->value)->sum('amount_kobo');
+        $reversed = (int) Commission::query()->whereHas('action', fn ($q) => $q->where('type', CommissionActionType::Reversal->value))->sum('amount_kobo');
+        if ($debited !== $reversed) {
+            $problems[] = 'Totals: successful commission reversal debits add up to '.Money::format($debited).', but reversed commissions add up to '.Money::format($reversed).'.';
         }
 
         return $problems;

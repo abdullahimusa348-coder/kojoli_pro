@@ -112,7 +112,7 @@ describe('module', function () {
     it('shows the Commissions tab as an empty state', function () {
         $html = $this->actingAs(cstStaff(), 'admin')->get('/admin/referrals')->assertOk()
             ->assertSee('data-commissions-empty', false)->assertSee('No commissions yet')
-            ->assertSee('Referral commissions are not being paid yet.')->getContent();
+            ->assertSee('Commissions appear here when referred customers\' purchases of the qualifying services succeed')->getContent(); // CP5: the list's empty state
 
         expect(cstTab($html, 'commissions'))->toContain('aria-current="page"')
             ->and(cstTab($html, 'rates'))->toContain('href="'.url('/admin/referrals/rates').'"')->not->toContain('aria-current');

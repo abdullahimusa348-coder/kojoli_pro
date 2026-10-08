@@ -835,12 +835,14 @@ describe('scope', function () {
             ->and(Permission::whereIn('name', ['referrals.view', 'referrals.manage'])->count())->toBe(2);
     });
 
-    it('adds only the approved referral routes, module and menu item (CP2 admin module, CP3 Referral page and Referrals tab)', function () {
+    it('adds only the approved referral routes, module and menu item (CP2 admin module, CP3 Referral page and Referrals tab, CP5 commission page)', function () {
         $referralRoutes = collect(Route::getRoutes())->filter(fn ($route) => preg_match('/referral|commission/i', $route->uri().' '.$route->getName()))
             ->map(fn ($route) => implode('|', $route->methods()).' '.$route->uri())->values()->all();
 
         expect($referralRoutes)->toBe([
-            'GET|HEAD referrals', 'GET|HEAD admin/referrals', 'GET|HEAD admin/referrals/links', 'GET|HEAD admin/referrals/rates',
+            'GET|HEAD referrals', 'GET|HEAD admin/referrals', 'GET|HEAD admin/referrals/commissions/{commission}',
+            'POST admin/referrals/commissions/{commission}/reverse', 'POST admin/referrals/commissions/{commission}/cancel', // CP5
+            'GET|HEAD admin/referrals/links', 'GET|HEAD admin/referrals/rates',
             'GET|HEAD admin/referrals/rates/{service}/edit', 'PUT admin/referrals/rates/{service}',
         ])
             ->and(AdminModule::Referrals->isBuilt())->toBeTrue()

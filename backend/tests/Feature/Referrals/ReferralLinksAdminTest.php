@@ -138,8 +138,9 @@ it('lets referrals.view staff look, keeps everyone else out, and has no way to c
     $this->get('/admin/referrals/links')->assertRedirect(route('admin.login'));
     $this->actingAs(User::factory()->create(), 'web')->get('/admin/referrals/links')->assertRedirect(route('admin.login'));
 
-    // The only write in the admin Referral & Commission area is a commission rate and cap (CP2).
+    // The only writes in the admin Referral & Commission area: a commission rate and cap (CP2), a commission's reversal or cancellation (CP5).
     $writes = collect(Route::getRoutes())->filter(fn ($route) => str_starts_with($route->uri(), 'admin/referrals')
         && array_diff($route->methods(), ['GET', 'HEAD']) !== [])->map(fn ($route) => implode('|', $route->methods()).' '.$route->uri())->values()->all();
-    expect($writes)->toBe(['PUT admin/referrals/rates/{service}']);
+    expect($writes)->toBe(['POST admin/referrals/commissions/{commission}/reverse', 'POST admin/referrals/commissions/{commission}/cancel',
+        'PUT admin/referrals/rates/{service}']);
 });

@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\Auth\AdminSessionController;
+use App\Http\Controllers\Admin\CommissionController;
 use App\Http\Controllers\Admin\CommissionSettingController;
 use App\Http\Controllers\Admin\CustomerController;
 use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
@@ -368,12 +369,21 @@ Route::prefix('admin')->name('admin.')->group(function () {
                 Route::get('{transaction}', [TransactionController::class, 'show'])->whereNumber('transaction')->name('.show');
             });
 
-        // Referral & Commission (Phase 12): referrals.view; rate and cap changes need referrals.manage
-        // (also re-checked inside the action). Only the qualifying services' rates can be edited, chosen
-        // by catalog slug: Smile Data and every other service is a 404. No delete routes.
+        // Referral & Commission (Phase 12): referrals.view; rate and cap changes and commission reversals and
+        // cancellations need referrals.manage (also re-checked inside the actions). Only the qualifying services'
+        // rates can be edited, chosen by catalog slug: Smile Data and every other service is a 404. No edit or
+        // delete routes for commissions or their actions.
         Route::middleware([SystemPermission::AdminAccess->middleware(), SystemPermission::ReferralsView->middleware()])
             ->prefix('referrals')->name('referrals')->group(function () {
                 Route::get('/', [ReferralController::class, 'index']);
+                Route::get('commissions/{commission:reference}', [CommissionController::class, 'show'])->where('commission', 'COM-[0-9A-Z]{26}')
+                    ->name('.commissions.show');
+                Route::middleware([SystemPermission::ReferralsManage->middleware(), 'throttle:30,1'])->group(function () {
+                    Route::post('commissions/{commission:reference}/reverse', [CommissionController::class, 'reverse'])->where('commission', 'COM-[0-9A-Z]{26}')
+                        ->name('.commissions.reverse');
+                    Route::post('commissions/{commission:reference}/cancel', [CommissionController::class, 'cancel'])->where('commission', 'COM-[0-9A-Z]{26}')
+                        ->name('.commissions.cancel');
+                });
                 // Referral links, read-only: they are made only at signup, and staff can never add, change or remove one.
                 Route::get('links', [ReferralLinkController::class, 'index'])->name('.links');
                 Route::get('rates', [CommissionSettingController::class, 'index'])->name('.rates');
