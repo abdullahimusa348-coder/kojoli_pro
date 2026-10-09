@@ -830,7 +830,7 @@ describe('scope', function () {
         }
         expect(Wallet::count())->toBe(0)
             ->and(Transaction::count())->toBe(0)
-            ->and(SystemPermission::cases())->toHaveCount(46)
+            ->and(SystemPermission::cases())->toHaveCount(54)
             ->and(Permission::where('guard_name', 'admin')->pluck('name')->sort()->values()->all())->toBe(collect(SystemPermission::values())->sort()->values()->all())
             ->and(Permission::whereIn('name', ['referrals.view', 'referrals.manage'])->count())->toBe(2);
     });
@@ -884,7 +884,8 @@ describe('scope', function () {
         $before = rftSchema();
         $steps = DB::table('migrations')->where('migration', '>=', RFT_MIGRATION)->count(); // this migration and any later one, newest first
 
-        Artisan::call('migrate:rollback', ['--step' => $steps]);
+        // Only this migration runs down: the Phase 13 KYC migrations come later, are counted, and are skipped (not in this path).
+        Artisan::call('migrate:rollback', ['--step' => $steps, '--path' => [database_path('migrations/'.RFT_MIGRATION.'.php')], '--realpath' => true]);
 
         expect(rftSchema())->toEqual(array_diff_key($before, array_flip(RFT_TABLES)))
             ->and(DB::table('migrations')->where('migration', RFT_MIGRATION)->exists())->toBeFalse();
@@ -904,7 +905,8 @@ describe('scope', function () {
 
         expect(DB::table($table)->count())->toBe(1)
             ->and(fn () => (require database_path('migrations/'.RFT_MIGRATION.'.php'))->down())->toThrow(RuntimeException::class, $message)
-            ->and(fn () => Artisan::call('migrate:rollback', ['--step' => 1]))->toThrow(RuntimeException::class, $message)
+            ->and(fn () => Artisan::call('migrate:rollback', ['--step' => DB::table('migrations')->where('migration', '>=', RFT_MIGRATION)->count(),
+                '--path' => [database_path('migrations/'.RFT_MIGRATION.'.php')], '--realpath' => true]))->toThrow(RuntimeException::class, $message)
             ->and(rftSchema())->toEqual($schema)
             ->and(rftRows())->toBe($rows)
             ->and(DB::table('migrations')->orderBy('id')->pluck('migration')->all())->toBe($migrations);

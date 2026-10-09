@@ -6,6 +6,7 @@ use App\Http\Controllers\Admin\CommissionSettingController;
 use App\Http\Controllers\Admin\CustomerController;
 use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
 use App\Http\Controllers\Admin\FailedCommissionAttemptController;
+use App\Http\Controllers\Admin\KycRequirementController;
 use App\Http\Controllers\Admin\ModulePlaceholderController;
 use App\Http\Controllers\Admin\PaymentController;
 use App\Http\Controllers\Admin\PaymentGatewayController;
@@ -215,6 +216,20 @@ Route::prefix('admin')->name('admin.')->group(function () {
                 Route::post('{customer}/password-reset', [CustomerController::class, 'sendPasswordReset'])
                     ->middleware([SystemPermission::CustomersResetPassword->middleware(), 'throttle:10,1'])
                     ->name('.password-reset');
+            });
+
+        // KYC requirements (Phase 13 CP1): configuration only. kyc.view opens the page and its change history; changing a
+        // requirement needs kyc.requirements (checked by the routes, and again in the action). Nothing is created or deleted
+        // here, and no requirement is enforced in this version. Requirements are addressed by their key.
+        Route::middleware([SystemPermission::AdminAccess->middleware(), SystemPermission::KycView->middleware()])
+            ->prefix('kyc')->name('kyc')->group(function () {
+                Route::get('requirements', [KycRequirementController::class, 'index'])->name('.requirements');
+                Route::middleware(SystemPermission::KycRequirements->middleware())->group(function () {
+                    Route::get('requirements/{requirement}/edit', [KycRequirementController::class, 'edit'])
+                        ->where('requirement', '[a-z][a-z0-9-]{1,39}')->name('.requirements.edit');
+                    Route::put('requirements/{requirement}', [KycRequirementController::class, 'update'])
+                        ->where('requirement', '[a-z][a-z0-9-]{1,39}')->middleware('throttle:30,1')->name('.requirements.update');
+                });
             });
 
         // Service catalog: categories, services, products and plans (services.* covers

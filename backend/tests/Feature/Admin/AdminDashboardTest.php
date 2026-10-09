@@ -16,8 +16,8 @@ function staffWith(SystemRole $role): SystemUser
 /** Modules each role may see and open. Reserved module permissions are not granted to any role yet. */
 dataset('role access', [
     'super admin' => [SystemRole::SuperAdmin, array_map(fn (AdminModule $m) => $m->value, AdminModule::cases())],
-    'manager' => [SystemRole::Manager, ['dashboard', 'users']],
-    'support' => [SystemRole::Support, ['dashboard', 'users']],
+    'manager' => [SystemRole::Manager, ['dashboard', 'users', 'kyc']],
+    'support' => [SystemRole::Support, ['dashboard', 'users', 'kyc']],
     'finance' => [SystemRole::Finance, ['dashboard', 'users']],
     'viewer' => [SystemRole::Viewer, ['dashboard', 'users']],
 ]);
@@ -46,7 +46,7 @@ it('lists all fifteen modules in order for super admin', function () {
     $this->actingAs(staffWith(SystemRole::SuperAdmin), 'admin')
         ->get('/admin')
         ->assertSeeInOrder([
-            'Dashboard', 'Users', 'Services', 'Transactions', 'Providers', 'Payments', 'Wallet', 'Withdrawals',
+            'Dashboard', 'Users', 'KYC', 'Services', 'Transactions', 'Providers', 'Payments', 'Wallet', 'Withdrawals',
             'Referral &amp; Commission', 'Notifications', 'Support', 'Reports', 'Settings', 'System Users', 'Roles &amp; Permissions',
         ], false);
 });

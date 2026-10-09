@@ -26,9 +26,10 @@ it('grants each role exactly its approved permissions', function (SystemRole $ro
     }
 })->with([
     'super admin' => [SystemRole::SuperAdmin, SystemPermission::values()],
-    'manager' => [SystemRole::Manager, ['admin.access', 'customers.view', 'customers.update-status', 'customers.change-type', 'customers.update', 'customers.reset-password']],
-    'support' => [SystemRole::Support, ['admin.access', 'customers.view', 'customers.update-status']],
-    'finance' => [SystemRole::Finance, ['admin.access', 'customers.view']],
+    'manager' => [SystemRole::Manager, ['admin.access', 'customers.view', 'customers.update-status', 'customers.change-type', 'customers.update', 'customers.reset-password',
+        'kyc.view', 'kyc.review', 'kyc.requirements', 'kyc.documents', 'virtual-accounts.view']],
+    'support' => [SystemRole::Support, ['admin.access', 'customers.view', 'customers.update-status', 'kyc.view']],
+    'finance' => [SystemRole::Finance, ['admin.access', 'customers.view', 'virtual-accounts.view', 'virtual-accounts.manage', 'virtual-accounts.providers']],
     'viewer' => [SystemRole::Viewer, ['admin.access', 'customers.view']],
 ]);
 

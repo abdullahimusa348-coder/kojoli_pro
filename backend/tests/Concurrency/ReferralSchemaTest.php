@@ -261,10 +261,13 @@ it('enforces the unique keys and the restricting and compound foreign keys', fun
 it('rolls back cleanly while empty, and refuses before any schema change while a row exists', function () {
     $snapshot = fn () => ['tables' => collect(Schema::getTables())->pluck('name')->sort()->values()->all(), 'checks' => rstChecks(),
         'foreign_keys' => collect(RST_TABLES)->mapWithKeys(fn (string $table) => [$table => Schema::hasTable($table) ? Schema::getForeignKeys($table) : null])->all(),
-        'migrations' => DB::table('migrations')->orderBy('id')->pluck('migration')->all()];
+        // A set, not an order: migrating again puts this migration after the Phase 13 KYC ones.
+        'migrations' => DB::table('migrations')->pluck('migration')->sort()->values()->all()];
     $before = $snapshot();
 
-    Artisan::call('migrate:rollback', ['--step' => 1, '--force' => true]);
+    // This migration and every later one are counted; the later Phase 13 KYC migrations are skipped (not in this path).
+    $steps = DB::table('migrations')->where('migration', '>=', RST_MIGRATION)->count();
+    Artisan::call('migrate:rollback', ['--step' => $steps, '--path' => [database_path('migrations/'.RST_MIGRATION.'.php')], '--realpath' => true, '--force' => true]);
     expect(collect(RST_TABLES)->filter(fn (string $table) => Schema::hasTable($table))->all())->toBe([])
         ->and(rstChecks())->toBe([])
         ->and(DB::table('migrations')->where('migration', RST_MIGRATION)->exists())->toBeFalse();
@@ -277,7 +280,8 @@ it('rolls back cleanly while empty, and refuses before any schema change while a
     $rows = DB::table('referral_codes')->get()->map(fn ($row) => (array) $row)->all();
     $message = 'Refusing to roll back: referral_codes holds referral or commission records, which would be lost. Nothing was changed.';
 
-    expect(fn () => Artisan::call('migrate:rollback', ['--step' => 1, '--force' => true]))->toThrow(RuntimeException::class, $message)
+    expect(fn () => Artisan::call('migrate:rollback', ['--step' => DB::table('migrations')->where('migration', '>=', RST_MIGRATION)->count(),
+        '--path' => [database_path('migrations/'.RST_MIGRATION.'.php')], '--realpath' => true, '--force' => true]))->toThrow(RuntimeException::class, $message)
         ->and($snapshot())->toEqual($before)
         ->and(DB::table('referral_codes')->get()->map(fn ($row) => (array) $row)->all())->toBe($rows);
 });

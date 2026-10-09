@@ -39,6 +39,12 @@ enum SystemPermission: string
     case CustomersUpdate = 'customers.update';
     case CustomersResetPassword = 'customers.reset-password';
 
+    // KYC (Phase 13 CP1). Only the configuration page exists; review and documents are defined so roles can be prepared.
+    case KycView = 'kyc.view';
+    case KycReview = 'kyc.review';
+    case KycRequirements = 'kyc.requirements';
+    case KycDocuments = 'kyc.documents';
+
     // Wallet
     case WalletView = 'wallet.view';
     case WalletAdjust = 'wallet.adjust';
@@ -66,6 +72,12 @@ enum SystemPermission: string
     case PaymentsManage = 'payments.manage';
     case PaymentsGateways = 'payments.gateways';
     case PaymentsCredentials = 'payments.credentials';
+
+    // Virtual accounts (Phase 13). Defined so roles can be prepared; the module is not built yet.
+    case VirtualAccountsView = 'virtual-accounts.view';
+    case VirtualAccountsManage = 'virtual-accounts.manage';
+    case VirtualAccountsProviders = 'virtual-accounts.providers';
+    case VirtualAccountsCredentials = 'virtual-accounts.credentials';
 
     // Purchases
     case PurchasesView = 'purchases.view';
@@ -107,11 +119,13 @@ enum SystemPermission: string
             self::SettingsView, self::SettingsUpdate => PermissionModule::Settings,
             self::CustomersView, self::CustomersUpdateStatus, self::CustomersChangeType,
             self::CustomersUpdate, self::CustomersResetPassword => PermissionModule::Users,
+            self::KycView, self::KycReview, self::KycRequirements, self::KycDocuments => PermissionModule::Kyc,
             self::WalletView, self::WalletAdjust, self::WalletManage => PermissionModule::Wallet,
             self::ServicesView, self::ServicesCreate, self::ServicesUpdate, self::ServicesDelete => PermissionModule::Services,
             self::PricingView, self::PricingUpdate => PermissionModule::Pricing,
             self::ProvidersView, self::ProvidersCreate, self::ProvidersUpdate, self::ProvidersDelete, self::ProvidersCredentials => PermissionModule::Providers,
             self::PaymentsView, self::PaymentsManage, self::PaymentsGateways, self::PaymentsCredentials => PermissionModule::Payments,
+            self::VirtualAccountsView, self::VirtualAccountsManage, self::VirtualAccountsProviders, self::VirtualAccountsCredentials => PermissionModule::VirtualAccounts,
             self::PurchasesView, self::PurchasesManage => PermissionModule::Purchases,
             self::TransactionsView, self::TransactionsManage => PermissionModule::Transactions,
             self::WithdrawalsView, self::WithdrawalsManage => PermissionModule::Withdrawals,
@@ -139,6 +153,12 @@ enum SystemPermission: string
             self::PaymentsManage => 'Recheck / resolve review',
             self::PaymentsGateways => 'Manage gateways',
             self::PaymentsCredentials => 'Manage gateway credentials',
+            self::KycReview => 'Decide submissions',
+            self::KycRequirements => 'Configure requirements',
+            self::KycDocuments => 'View documents',
+            self::VirtualAccountsManage => 'Resolve credits, enable or disable accounts',
+            self::VirtualAccountsProviders => 'Manage providers',
+            self::VirtualAccountsCredentials => 'Manage provider credentials',
             self::PurchasesManage => 'Re-check with provider',
             self::WithdrawalsManage => 'Approve / manage',
             self::ReportsExport => 'Export',

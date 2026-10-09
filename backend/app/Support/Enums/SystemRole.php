@@ -43,13 +43,26 @@ enum SystemRole: string
                 SystemPermission::CustomersChangeType->value,
                 SystemPermission::CustomersUpdate->value,
                 SystemPermission::CustomersResetPassword->value,
+                SystemPermission::KycView->value,
+                SystemPermission::KycReview->value,
+                SystemPermission::KycRequirements->value,
+                SystemPermission::KycDocuments->value,
+                SystemPermission::VirtualAccountsView->value,
             ],
             self::Support => [
                 SystemPermission::AdminAccess->value,
                 SystemPermission::CustomersView->value,
                 SystemPermission::CustomersUpdateStatus->value,
+                SystemPermission::KycView->value,
             ],
-            self::Finance, self::Viewer => [
+            self::Finance => [
+                SystemPermission::AdminAccess->value,
+                SystemPermission::CustomersView->value,
+                SystemPermission::VirtualAccountsView->value,
+                SystemPermission::VirtualAccountsManage->value,
+                SystemPermission::VirtualAccountsProviders->value,
+            ],
+            self::Viewer => [
                 SystemPermission::AdminAccess->value,
                 SystemPermission::CustomersView->value,
             ],

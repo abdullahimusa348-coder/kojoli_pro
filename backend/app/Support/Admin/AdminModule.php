@@ -16,6 +16,7 @@ enum AdminModule: string
 {
     case Dashboard = 'dashboard';
     case Users = 'users';
+    case Kyc = 'kyc';
     case Services = 'services';
     case Transactions = 'transactions';
     case Purchases = 'purchases';
@@ -36,6 +37,7 @@ enum AdminModule: string
         return match ($this) {
             self::Dashboard => 'Dashboard',
             self::Users => 'Users',
+            self::Kyc => 'KYC',
             self::Services => 'Services',
             self::Transactions => 'Transactions',
             self::Purchases => 'Purchases',
@@ -59,6 +61,7 @@ enum AdminModule: string
         return (match ($this) {
             self::Dashboard => SystemPermission::AdminAccess,
             self::Users => SystemPermission::CustomersView,
+            self::Kyc => SystemPermission::KycView,
             self::SystemUsers => SystemPermission::SystemUsersManage,
             self::Roles => SystemPermission::RolesView,
             self::Settings => SystemPermission::SettingsView,
@@ -80,7 +83,7 @@ enum AdminModule: string
     public function plannedPhase(): ?int
     {
         return match ($this) {
-            self::Dashboard, self::Settings, self::SystemUsers, self::Roles, self::Users, self::Services, self::Providers,
+            self::Dashboard, self::Settings, self::SystemUsers, self::Roles, self::Users, self::Kyc, self::Services, self::Providers,
             self::Transactions, self::Wallet, self::Payments, self::Purchases, self::Referrals => null,
             self::Withdrawals => 14,
             self::Notifications, self::Support => 15,
@@ -95,7 +98,12 @@ enum AdminModule: string
 
     public function routeName(): string
     {
-        return $this === self::Dashboard ? 'admin.dashboard' : 'admin.'.$this->value;
+        return match ($this) {
+            self::Dashboard => 'admin.dashboard',
+            // KYC opens on its requirements page until the review queue is built (Phase 13 CP2).
+            self::Kyc => 'admin.kyc.requirements',
+            default => 'admin.'.$this->value,
+        };
     }
 
     /** URL path below /admin. */
@@ -109,7 +117,7 @@ enum AdminModule: string
     {
         return match ($this) {
             self::Dashboard => 'Overview',
-            self::Users, self::Services, self::Transactions, self::Purchases, self::Providers => 'Operations',
+            self::Users, self::Kyc, self::Services, self::Transactions, self::Purchases, self::Providers => 'Operations',
             self::Payments, self::Wallet, self::Withdrawals, self::Referrals => 'Finance',
             self::Notifications, self::Support, self::Reports => 'Engagement',
             self::Settings, self::SystemUsers, self::Roles => 'Administration',
@@ -123,6 +131,7 @@ enum AdminModule: string
             self::Dashboard => 'M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6ZM3.75 15.75A2.25 2.25 0 0 1 6 13.5h2.25a2.25 2.25 0 0 1 2.25 2.25V18a2.25 2.25 0 0 1-2.25 2.25H6A2.25 2.25 0 0 1 3.75 18v-2.25ZM13.5 6a2.25 2.25 0 0 1 2.25-2.25H18A2.25 2.25 0 0 1 20.25 6v2.25A2.25 2.25 0 0 1 18 10.5h-2.25a2.25 2.25 0 0 1-2.25-2.25V6ZM13.5 15.75a2.25 2.25 0 0 1 2.25-2.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-2.25A2.25 2.25 0 0 1 13.5 18v-2.25Z',
             self::Users => 'M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z',
             self::Services => 'M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0 4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0-5.571 3-5.571-3',
+            self::Kyc => 'M15 9h3.75M15 12h3.75M15 15h3.75M4.5 19.5h15a2.25 2.25 0 0 0 2.25-2.25V6.75A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25v10.5A2.25 2.25 0 0 0 4.5 19.5Zm6-10.125a1.875 1.875 0 1 1-3.75 0 1.875 1.875 0 0 1 3.75 0Zm1.294 6.336a6.721 6.721 0 0 1-3.17.789 6.721 6.721 0 0 1-3.168-.789 3.376 3.376 0 0 1 6.338 0Z',
             self::Transactions => 'M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5',
             self::Purchases => 'M15.75 10.5V6a3.75 3.75 0 1 0-7.5 0v4.5m11.356-1.993 1.263 12c.07.665-.45 1.243-1.119 1.243H4.25a1.125 1.125 0 0 1-1.12-1.243l1.264-12A1.125 1.125 0 0 1 5.513 7.5h12.974c.576 0 1.059.435 1.119 1.007ZM8.625 10.5a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm7.5 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z',
             self::Providers => 'M5.25 14.25h13.5m-13.5 0a3 3 0 0 1-3-3m3 3a3 3 0 1 0 0 6h13.5a3 3 0 1 0 0-6m-16.5-3a3 3 0 0 1 3-3h13.5a3 3 0 0 1 3 3m-19.5 0a4.5 4.5 0 0 1 .9-2.7L5.737 5.1a3.375 3.375 0 0 1 2.7-1.35h7.126c1.062 0 2.062.5 2.7 1.35l2.587 3.45a4.5 4.5 0 0 1 .9 2.7m0 0a3 3 0 0 1-3 3m0 3h.008v.008h-.008v-.008Zm0-6h.008v.008h-.008v-.008Zm-3 6h.008v.008h-.008v-.008Zm0-6h.008v.008h-.008v-.008Z',

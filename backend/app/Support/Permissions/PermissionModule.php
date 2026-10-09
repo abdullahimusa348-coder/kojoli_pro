@@ -14,11 +14,13 @@ enum PermissionModule: string
     case Roles = 'roles';
     case Settings = 'settings';
     case Users = 'users';
+    case Kyc = 'kyc';
     case Wallet = 'wallet';
     case Services = 'services';
     case Pricing = 'pricing';
     case Providers = 'providers';
     case Payments = 'payments';
+    case VirtualAccounts = 'virtual-accounts';
     case Purchases = 'purchases';
     case Transactions = 'transactions';
     case Withdrawals = 'withdrawals';
@@ -36,11 +38,13 @@ enum PermissionModule: string
             self::Roles => 'Roles & Permissions',
             self::Settings => 'Settings',
             self::Users => 'Users (customers)',
+            self::Kyc => 'KYC',
             self::Wallet => 'Wallet',
             self::Services => 'Services',
             self::Pricing => 'Pricing',
             self::Providers => 'Providers',
             self::Payments => 'Payments',
+            self::VirtualAccounts => 'Virtual accounts',
             self::Purchases => 'Purchases',
             self::Transactions => 'Transactions',
             self::Withdrawals => 'Withdrawals',
@@ -55,6 +59,6 @@ enum PermissionModule: string
     /** Whether the module's screens exist yet (its permissions are enforced today). */
     public function isBuilt(): bool
     {
-        return in_array($this, [self::Dashboard, self::SystemUsers, self::Roles, self::Settings, self::Users, self::Services, self::Pricing, self::Providers, self::Wallet, self::Transactions, self::Payments, self::Purchases, self::Referrals], true);
+        return in_array($this, [self::Dashboard, self::SystemUsers, self::Roles, self::Settings, self::Users, self::Kyc, self::Services, self::Pricing, self::Providers, self::Wallet, self::Transactions, self::Payments, self::Purchases, self::Referrals], true);
     }
 }

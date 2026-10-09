@@ -615,6 +615,6 @@ describe('scope', function () {
             $this->get("/admin/referrals/rates/{$slug}/edit")->assertOk();
         }
         cstNothingSaved();
-        expect(SystemPermission::cases())->toHaveCount(46);
+        expect(SystemPermission::cases())->toHaveCount(54);
     });
 });
