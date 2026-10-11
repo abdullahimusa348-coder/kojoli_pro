@@ -21,11 +21,12 @@ require_once __DIR__.'/../../Support/Kyc/helpers.php';
  * or writes customer KYC data, and nothing is enforced.
  */
 
-it('creates the four configuration tables and none of the later KYC or virtual-account tables', function () {
+it('creates the four configuration tables, and no virtual-account table or KYC table that the design does not use', function () {
     foreach (['kyc_requirements', 'kyc_requirement_changes', 'kyc_profiles', 'kyc_submissions'] as $table) {
         expect(Schema::hasTable($table))->toBeTrue("{$table} missing");
     }
-    foreach (['kyc_submission_items', 'kyc_decisions', 'kyc_documents', 'kyc_document_accesses', 'virtual_accounts',
+    // kyc_documents is CP2a's document metadata table, and document access is recorded in kyc_audit_events (CP2a), so neither is listed.
+    foreach (['kyc_submission_items', 'kyc_decisions', 'kyc_document_accesses', 'virtual_accounts',
         'virtual_account_providers', 'virtual_account_provider_credentials', 'virtual_account_credits',
         'virtual_account_webhooks', 'virtual_account_status_changes'] as $table) {
         expect(Schema::hasTable($table))->toBeFalse("{$table} exists");
@@ -37,7 +38,7 @@ it('keeps exactly the columns the configuration needs', function () {
         'user_types', 'purposes', 'position', 'updated_by', 'created_at', 'updated_at'])
         ->and(Schema::getColumnListing('kyc_requirement_changes'))->toEqual(['id', 'kyc_requirement_id', 'old_state', 'new_state', 'reason', 'changed_by', 'created_at'])
         ->and(Schema::getColumnListing('kyc_profiles'))->toEqual(['id', 'user_id', 'status', 'status_changed_at', 'created_at', 'updated_at'])
-        ->and(Schema::getColumnListing('kyc_submissions'))->toEqual(['id', 'reference', 'user_id', 'submitted_at', 'created_at']);
+        ->and(Schema::getColumnListing('kyc_submissions'))->toEqual(['id', 'reference', 'user_id', 'kind', 'user_type', 'form_key', 'submitted_at', 'created_at']);
 });
 
 it('seeds the four requirements, all off, with no customer types and no purposes', function () {

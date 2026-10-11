@@ -26,6 +26,8 @@ function kycFoundationFiles(): array
         File::allFiles(app_path('Support/Kyc')),
         File::allFiles(app_path('Actions/Admin/Kyc')),
         File::allFiles(app_path('Http/Requests/Admin/Kyc')),
+        File::allFiles(app_path('Services/Kyc')),
+        File::allFiles(app_path('Exceptions/Kyc')),
         [app_path('Http/Controllers/Admin/KycRequirementController.php')],
         File::allFiles(resource_path('views/admin/kyc')),
         File::glob(database_path('migrations/*_kyc_*.php')),
@@ -52,7 +54,7 @@ it('keeps the KYC files free of references to the Phase 11 NIN and BVN purchase 
 it('creates no configuration column that holds an identity number, a document or a secret', function () {
     foreach (['kyc_requirements', 'kyc_requirement_changes', 'kyc_profiles', 'kyc_submissions'] as $table) {
         expect(collect(Schema::getColumnListing($table))->intersect(['bvn', 'nin', 'number', 'identity_number', 'document',
-            'document_path', 'secret', 'value', 'encrypted_value'])->values()->all())->toBe([], $table);
+            'document_path', 'secret', 'value', 'encrypted_value', 'ciphertext'])->values()->all())->toBe([], $table);
     }
 });
 

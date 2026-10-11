@@ -2,16 +2,22 @@
 
 namespace App\Models;
 
+use App\Support\Enums\UserType;
+use App\Support\Kyc\KycSubmissionKind;
 use Database\Factories\KycSubmissionFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Str;
 use LogicException;
 
 /**
- * A customer's KYC submission (Phase 13): what the customer sent for the
- * requirements at one moment. Immutable and never deleted; a later submission
- * never changes an earlier one. CP1 writes none.
+ * A customer's KYC submission (Phase 13): what the customer sent at one moment, for the requirements that applied then. Immutable and
+ * never deleted: a later submission never changes an earlier one, and its decision (KycReview) is the only thing that follows it.
+ * CP2a records the kind (initial or correction), the customer type it was sent under and a one-time form key. Its requirements and
+ * identity values are KycSubmissionRequirement and KycSubmissionIdentity rows; this row holds no identity number.
  */
 class KycSubmission extends Model
 {
@@ -22,6 +28,9 @@ class KycSubmission extends Model
 
     /** @var list<string> */
     protected $fillable = [];
+
+    /** @var list<string> */
+    protected $hidden = ['form_key'];
 
     protected static function booted(): void
     {
@@ -35,6 +44,8 @@ class KycSubmission extends Model
     {
         return [
             'user_id' => 'integer',
+            'kind' => KycSubmissionKind::class,
+            'user_type' => UserType::class,
             'submitted_at' => 'datetime',
             'created_at' => 'datetime',
         ];
@@ -46,6 +57,24 @@ class KycSubmission extends Model
         return $this->belongsTo(User::class);
     }
 
+    /** @return HasMany<KycSubmissionRequirement, $this> */
+    public function requirements(): HasMany
+    {
+        return $this->hasMany(KycSubmissionRequirement::class, 'kyc_submission_id');
+    }
+
+    /** @return HasMany<KycSubmissionIdentity, $this> */
+    public function identities(): HasMany
+    {
+        return $this->hasMany(KycSubmissionIdentity::class, 'kyc_submission_id');
+    }
+
+    /** @return HasOne<KycReview, $this> */
+    public function review(): HasOne
+    {
+        return $this->hasOne(KycReview::class, 'kyc_submission_id');
+    }
+
     private function enforceInvariants(): void
     {
         if (preg_match('/^KYC-[0-9A-Z]{26}$/', (string) $this->reference) !== 1) {
@@ -53,6 +82,18 @@ class KycSubmission extends Model
         }
         if ($this->user_id === null) {
             throw new LogicException('A KYC submission belongs to a customer.');
+        }
+        if (KycSubmissionKind::tryFrom((string) ($this->attributes['kind'] ?? '')) === null) {
+            throw new LogicException('A KYC submission is an initial submission or a correction.');
+        }
+        if (UserType::tryFrom((string) ($this->attributes['user_type'] ?? '')) === null) {
+            throw new LogicException('A KYC submission records the customer type it was sent under.');
+        }
+        if (! is_string($this->form_key) || strlen($this->form_key) !== 36 || ! Str::isUuid($this->form_key)) {
+            throw new LogicException('A KYC submission keeps its one-time form key (a UUID).');
+        }
+        if ($this->submitted_at === null) {
+            throw new LogicException('A KYC submission records when it was sent.');
         }
     }
 }

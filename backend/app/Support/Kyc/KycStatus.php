@@ -27,6 +27,15 @@ enum KycStatus: string
         };
     }
 
+    /**
+     * Whether this status is a staff decision (approved, rejected or more information requested) rather than a state a
+     * submission waits in (Phase 13 CP2a). Only decisions are written to the review history.
+     */
+    public function isDecision(): bool
+    {
+        return in_array($this, [self::Approved, self::Rejected, self::MoreInfoRequested], true);
+    }
+
     /** @return list<string> */
     public static function values(): array
     {

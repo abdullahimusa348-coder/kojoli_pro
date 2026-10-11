@@ -160,8 +160,10 @@ it('keeps the database rules that repeat the model guards, on the real MariaDB s
         ->pluck('CONSTRAINT_NAME')->sort()->values()->all();
 
     // MariaDB also keeps the JSON-validity checks Laravel adds to each JSON column, named after the column.
+    // kyc_submissions also carries the CP2a rules for its kind, customer type and form key.
     expect($checks)->toBe(collect(['kyc_profiles_status_rule', 'kyc_requirement_changes_reason_length', 'kyc_requirements_label_length',
-        'kyc_requirements_type_rule', 'kyc_submissions_reference_rule', 'new_state', 'old_state', 'purposes', 'user_types'])->sort()->values()->all());
+        'kyc_requirements_type_rule', 'kyc_submissions_form_key_rule', 'kyc_submissions_kind_rule', 'kyc_submissions_reference_rule',
+        'kyc_submissions_user_type_rule', 'new_state', 'old_state', 'purposes', 'user_types'])->sort()->values()->all());
 });
 
 /** The database refuses the insert, naming the constraint, even though it bypasses the model guards. */
@@ -190,7 +192,8 @@ it('refuses rows that break a database rule, even when the model guards are bypa
     kycRefused('kyc_profiles_status_rule', fn () => DB::table('kyc_profiles')->insert(['user_id' => $customer->id, 'status' => 'bogus',
         'created_at' => now(), 'updated_at' => now()]));
     kycRefused('kyc_submissions_reference_rule', fn () => DB::table('kyc_submissions')->insert(['reference' => 'PUR-'.strtoupper((string) Str::ulid()),
-        'user_id' => $customer->id, 'submitted_at' => now(), 'created_at' => now()]));
+        'user_id' => $customer->id, 'kind' => 'initial', 'user_type' => 'subscriber', 'form_key' => (string) Str::uuid(),
+        'submitted_at' => now(), 'created_at' => now()]));
 });
 
 it('caps each name and reason at the size of its column, which the database enforces as well', function () {
@@ -213,7 +216,7 @@ it('accepts the smallest and largest values the rules allow', function () {
     $customer = User::factory()->create();
     DB::table('kyc_profiles')->insert(['user_id' => $customer->id, 'status' => 'more_info_requested', 'created_at' => now(), 'updated_at' => now()]);
     DB::table('kyc_submissions')->insert(['reference' => 'KYC-'.strtoupper((string) Str::ulid()), 'user_id' => $customer->id,
-        'submitted_at' => now(), 'created_at' => now()]);
+        'kind' => 'initial', 'user_type' => 'subscriber', 'form_key' => (string) Str::uuid(), 'submitted_at' => now(), 'created_at' => now()]);
 
     expect(DB::table('kyc_requirements')->where('label', 'AB')->exists())->toBeTrue()
         ->and(KycRequirementChange::count())->toBe(2)
