@@ -17,6 +17,12 @@ require_once __DIR__.'/../../Support/Kyc/helpers.php';
  * migration (KYC_MIGRATIONS): the newest one checks every KYC table first, so a refused rollback changes nothing.
  */
 
+/** The seven KYC migration files, by path: the only files the KYC rollbacks below may run. */
+function kycMigrationPaths(): array
+{
+    return array_map(fn (string $name) => database_path('migrations/'.$name.'.php'), KYC_MIGRATIONS);
+}
+
 beforeEach(fn () => kycSeed());
 
 it('rolls back the whole KYC set when it is empty, and migrates it again', function () {
@@ -25,7 +31,7 @@ it('rolls back the whole KYC set when it is empty, and migrates it again', funct
     }
     DB::table('kyc_requirements')->delete();
 
-    Artisan::call('migrate:rollback', ['--step' => count(KYC_MIGRATIONS)]);
+    Artisan::call('migrate:rollback', ['--step' => count(KYC_MIGRATIONS), '--path' => kycMigrationPaths(), '--realpath' => true]);
 
     expect(Schema::hasTable('kyc_requirements'))->toBeFalse()
         ->and(Schema::hasTable('kyc_requirement_changes'))->toBeFalse()
@@ -56,7 +62,7 @@ it('refuses to roll back while a KYC table holds a row, changing nothing', funct
     $message = "Refusing to roll back: {$table} holds KYC configuration or records, which would be lost. Nothing was changed.";
 
     expect(fn () => (require database_path('migrations/'.KYC_TABLES_MIGRATION.'.php'))->down())->toThrow(RuntimeException::class, $message)
-        ->and(fn () => Artisan::call('migrate:rollback', ['--step' => count(KYC_MIGRATIONS)]))->toThrow(RuntimeException::class, $message)
+        ->and(fn () => Artisan::call('migrate:rollback', ['--step' => count(KYC_MIGRATIONS), '--path' => kycMigrationPaths(), '--realpath' => true]))->toThrow(RuntimeException::class, $message)
         ->and(Schema::hasTable('kyc_requirements'))->toBeTrue()
         ->and(Permission::whereIn('name', KYC_PERMISSION_NAMES)->count())->toBe(8)
         ->and(DB::table('migrations')->orderBy('id')->pluck('migration')->all())->toBe($migrations);

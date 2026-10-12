@@ -28,12 +28,21 @@ const PRM_CP1 = ['2026_10_04_100000_add_recipient_type_to_purchases', '2026_10_0
 /** The last Phase 10 migration: the Phase 10 schema is everything up to and including it, whatever later checkpoints add. */
 const PRM_PHASE10_LAST = '2026_10_03_170200_add_purchase_integrity_constraints';
 
-/** Rolls back every migration newer than $last, newest first (nothing when there is none). */
+/** The two CP1 migration files, by path: the only files the CP1 rollbacks below may run. */
+function prmCp1Paths(): array
+{
+    return array_map(fn (string $name) => database_path('migrations/'.$name.'.php'), PRM_CP1);
+}
+
+/** Rolls back every migration newer than $last, newest first (nothing when there is none), and only those files. */
 function prmRollBackAfter(string $last): void
 {
     $steps = DB::table('migrations')->where('migration', '>', $last)->count();
     if ($steps > 0) {
-        Artisan::call('migrate:rollback', ['--step' => $steps]);
+        $paths = collect(File::files(database_path('migrations')))
+            ->filter(fn ($file) => $file->getFilenameWithoutExtension() > $last)
+            ->map(fn ($file) => $file->getPathname())->values()->all();
+        Artisan::call('migrate:rollback', ['--step' => $steps, '--path' => $paths, '--realpath' => true]);
     }
 }
 
@@ -121,7 +130,7 @@ it('refuses to roll back while NIN/BVN data exists, changing nothing it refuses'
     prmRollBackAfter(PRM_CP1[1]); // later checkpoints first (nothing of theirs blocks it here), so CP1's two migrations are the newest
     $before = prmSchema();
 
-    expect(fn () => Artisan::call('migrate:rollback', ['--step' => 2]))
+    expect(fn () => Artisan::call('migrate:rollback', ['--step' => 2, '--path' => prmCp1Paths(), '--realpath' => true]))
         ->toThrow(RuntimeException::class, 'Refusing to roll back: NIN/BVN purchases have identity recipients, which would be lost. Nothing was changed.');
     expect(prmSchema())->toEqual($before)
         ->and(DB::table('migrations')->whereIn('migration', PRM_CP1)->count())->toBe(2)
@@ -129,7 +138,7 @@ it('refuses to roll back while NIN/BVN data exists, changing nothing it refuses'
 
     // Even with its identity recipient gone, the NIN purchase itself stops the purchases migration.
     DB::table('purchase_identity_recipients')->delete();
-    expect(fn () => Artisan::call('migrate:rollback', ['--step' => 2]))
+    expect(fn () => Artisan::call('migrate:rollback', ['--step' => 2, '--path' => prmCp1Paths(), '--realpath' => true]))
         ->toThrow(RuntimeException::class, 'Refusing to roll back: 1 purchase(s) are not phone purchases (NIN/BVN).');
     expect(Schema::hasTable('purchase_identity_recipients'))->toBeFalse()
         ->and(prmSchema()['purchases'])->toEqual($before['purchases'])
