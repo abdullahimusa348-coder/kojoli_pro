@@ -16,6 +16,7 @@ use App\Models\Wallet;
 use App\Models\WalletLedgerEntry;
 use App\Support\Enums\UserType;
 use App\Support\Purchases\PurchaseAttemptStatus;
+use App\Support\Purchases\PurchaseSource;
 use App\Support\Purchases\PurchaseStatus;
 use App\Support\Purchases\RecipientType;
 use Database\Seeders\RolesAndPermissionsSeeder;
@@ -42,9 +43,6 @@ require_once __DIR__.'/../Support/Purchases/helpers.php';
  */
 
 const PRC_MIGRATION = '2026_10_04_120000_create_purchase_results_table';
-
-/** The last CP1 migration: everything newer is CP2 or later. */
-const PRC_CP1_LAST = '2026_10_04_100100_create_purchase_identity_recipients_table';
 
 beforeEach(function () {
     if (! in_array(DB::connection()->getDriverName(), ['mysql', 'mariadb'], true)) {
@@ -112,14 +110,22 @@ function prcRace(array $workers): array
         }
     })->start();
 
-    $deadline = microtime(true) + 60;
-    while (count(glob($barrier.'.ready.*')) < count($workers) && microtime(true) < $deadline) {
-        usleep(10_000);
+    try {
+        $deadline = microtime(true) + 60;
+        while (count(glob($barrier.'.ready.*')) < count($workers) && microtime(true) < $deadline) {
+            usleep(10_000);
+        }
+        expect(count(glob($barrier.'.ready.*')))->toBe(count($workers));
+        touch($barrier);
+        $results = $pool->wait();
+    } finally {
+        $pool->stop(2); // ends any worker still at the barrier; after a normal wait nothing is running
+        foreach ([$barrier, ...glob($barrier.'.ready.*')] as $file) {
+            if (is_file($file)) {
+                unlink($file);
+            }
+        }
     }
-    expect(count(glob($barrier.'.ready.*')))->toBe(count($workers));
-    touch($barrier);
-    $results = $pool->wait();
-    array_map('unlink', [$barrier, ...glob($barrier.'.ready.*')]);
 
     $lines = [];
     foreach ($results->collect() as $result) {
@@ -225,9 +231,37 @@ it('delivers one result when scheduled reconciliation and staff re-checks race',
         ...array_fill(0, 5, ['recheck', $staff->id, $purchase->id, 2, 'succeeded,succeeded', 'fixture', 60]),
     ]));
 
-    expect($results->where('result', 'error')->values()->all())->toBe([])
-        ->and($purchase->fresh()->status)->toBe(PurchaseStatus::Successful)
-        ->and(PurchaseResult::count())->toBe(1);
+    // Five workers of each kind, two calls each: one JSON line per call.
+    $reconciles = $results->whereNotNull('stats');   // 10 reconciliation lines: {result, stats}
+    $rechecks = $results->whereNotNull('purchase');  // 10 staff re-check lines: {result, purchase, status}
+
+    $purchase->refresh();
+    $attempts = PurchaseAttempt::where('purchase_id', $purchase->id)->get();
+    $stored = PurchaseResult::where('purchase_id', $purchase->id)->get();
+    $settled = PurchaseStatusChange::where('purchase_id', $purchase->id)->where('new_status', PurchaseStatus::Successful->value)->get();
+    expect($results)->toHaveCount(20)
+        ->and($results->where('result', '!=', 'ok')->values()->all())->toBe([])
+        ->and($reconciles)->toHaveCount(10)
+        ->and($reconciles->pluck('stats.errors')->sum())->toBe(0)
+        ->and($reconciles->pluck('stats.review')->sum())->toBe(0)
+        ->and($rechecks)->toHaveCount(10)
+        ->and($rechecks->pluck('status')->unique()->values()->all())->toBe([PurchaseStatus::Successful->value])
+        ->and($purchase->status)->toBe(PurchaseStatus::Successful)
+        ->and(PurchaseResult::count())->toBe(1)
+        ->and($attempts)->toHaveCount(1)
+        ->and($stored)->toHaveCount(1)
+        ->and($stored->sole()->purchase_attempt_id)->toBe($purchase->successful_attempt_id)
+        ->and($attempts->sole()->id)->toEqual($purchase->successful_attempt_id)
+        ->and($attempts->sole()->status)->toBe(PurchaseAttemptStatus::Succeeded)
+        ->and(array_column($stored->sole()->fields() ?? [], 'key'))->toBe(['fixture_1', 'fixture_2'])
+        ->and(Transaction::where('idempotency_key', 'purchase-refund:'.$purchase->reference)->count())->toBe(0)
+        ->and($purchase->refund_transaction_id)->toBeNull()
+        ->and($purchase->failure_reason)->toBeNull()
+        ->and($purchase->next_check_at)->toBeNull()
+        ->and($purchase->completed_at)->not->toBeNull()
+        ->and($settled)->toHaveCount(1)
+        ->and($settled->sole()->source)->toBeIn([PurchaseSource::Reconcile, PurchaseSource::Admin])
+        ->and($settled->sole()->changed_by)->toEqual($settled->sole()->source === PurchaseSource::Admin ? $staff->id : null);
     prcSettledOnce($purchase);
 })->with(['NIN' => [RecipientType::Nin], 'BVN' => [RecipientType::Bvn]]);
 
@@ -242,12 +276,34 @@ it('produces exactly one outcome, never a result and a refund, when re-checks ge
             ...array_fill(0, 5, ['reconcile', 0, 0, 2, 'failed_definite,failed_definite', 'none', 50]),
         ]));
 
-        expect($results->where('result', 'error')->values()->all())->toBe([])
-            ->and($purchase->fresh()->status)->toBeIn([PurchaseStatus::Successful, PurchaseStatus::Failed]);
+        // Five workers of each kind, two calls each: one JSON line per call.
+        $reconciles = $results->whereNotNull('stats');   // 10 reconciliation lines: {result, stats}
+        $rechecks = $results->whereNotNull('purchase');  // 10 staff re-check lines: {result, purchase, status}
+
+        $purchase->refresh();
+        $successful = $purchase->status === PurchaseStatus::Successful;
+        $refunds = Transaction::where('idempotency_key', 'purchase-refund:'.$purchase->reference)->get();
+        expect($results)->toHaveCount(20)
+            ->and($results->where('result', '!=', 'ok')->values()->all())->toBe([])
+            ->and($reconciles)->toHaveCount(10)
+            ->and($reconciles->pluck('stats.errors')->sum())->toBe(0)
+            ->and($reconciles->pluck('stats.review')->sum())->toBe(0)
+            ->and($rechecks)->toHaveCount(10)
+            ->and($rechecks->pluck('status')->unique()->values()->all())->toBe([$purchase->status->value])
+            ->and($purchase->status)->toBeIn([PurchaseStatus::Successful, PurchaseStatus::Failed])
+            ->and(PurchaseResult::where('purchase_id', $purchase->id)->count())->toBe($successful ? 1 : 0)
+            ->and($refunds)->toHaveCount($successful ? 0 : 1)
+            ->and($purchase->refund_transaction_id)->toEqual($successful ? null : $refunds->sole()->id)
+            ->and(PurchaseAttempt::where('purchase_id', $purchase->id)->sole()->status)
+            ->toBe($successful ? PurchaseAttemptStatus::Succeeded : PurchaseAttemptStatus::FailedDefinite);
         prcSettledOnce($purchase);
-        $outcomes[] = $purchase->fresh()->status->value;
+        $outcomes[] = $purchase->status->value;
     }
-    expect(PurchaseResult::count())->toBe(count(array_keys($outcomes, 'successful')));
+    expect(PurchaseResult::count())->toBe(count(array_keys($outcomes, 'successful')))
+        ->and(Transaction::where('idempotency_key', 'like', 'purchase-refund:%')->count())->toBe(count(array_keys($outcomes, 'failed')))
+        ->and(Transaction::where('idempotency_key', 'like', 'purchase:%')->count())->toBe(3)
+        ->and(Purchase::count())->toBe(3)
+        ->and(PurchaseStatusChange::whereIn('new_status', ['successful', 'failed'])->count())->toBe(3);
 });
 
 it('keeps a success without its result unclear under parallel re-checks: no result, no success, no refund', function () {
@@ -258,11 +314,20 @@ it('keeps a success without its result unclear under parallel re-checks: no resu
         ...array_fill(0, 5, ['reconcile', 0, 0, 3, 'succeeded,succeeded,succeeded', 'none', 30]),
         ...array_fill(0, 5, ['recheck', $staff->id, $purchase->id, 3, 'succeeded,succeeded,succeeded', 'none', 30]),
     ]));
+    $reconciled = $results->whereNotNull('stats');   // 15 reconciliation lines: {result, stats}
+    $rechecked = $results->whereNotNull('purchase'); // 15 staff re-check lines: {result, purchase, status}
 
     $purchase->refresh();
-    expect($results->where('result', 'error')->values()->all())->toBe([])
+    expect($results)->toHaveCount(30)
+        ->and($results->where('result', '!=', 'ok')->values()->all())->toBe([])
+        ->and($reconciled)->toHaveCount(15)
+        ->and($reconciled->pluck('stats.errors')->sum())->toBe(0)
+        ->and($rechecked)->toHaveCount(15)
+        ->and($rechecked->pluck('status')->unique()->values()->all())->toBe(['pending'])
+        ->and(PurchaseStatusChange::where('purchase_id', $purchase->id)->where('source', PurchaseSource::Admin->value)
+            ->where('changed_by', $staff->id)->count())->toBe(15)
         ->and($purchase->status)->toBe(PurchaseStatus::Pending)
-        ->and($purchase->check_count)->toBeGreaterThanOrEqual(1)
+        ->and($purchase->check_count)->toBeGreaterThanOrEqual(15)
         ->and($purchase->attempts()->sole()->status)->toBe(PurchaseAttemptStatus::Unknown)
         ->and($purchase->attempts()->sole()->error_code)->toBe('result_missing');
     prcSettledOnce($purchase);
@@ -327,17 +392,30 @@ it('rolls the results table back and forward over historical data, and refuses o
     $schema = prcSchema();
     expect($schema['checks'])->toBe(['purchase_results_field_count']);
 
-    // Back to the CP1 schema (allowed: no result exists); no value changes.
-    $steps = DB::table('migrations')->where('migration', '>', PRC_CP1_LAST)->count();
-    Artisan::call('migrate:rollback', ['--step' => $steps, '--force' => true]); // CP2 and every later checkpoint, newest first
-    expect(Schema::hasTable('purchase_results'))->toBeFalse()
-        ->and(prcRows())->toBe($before);
+    // Only the results migration is rolled back. Its file path limits the rollback to that one migration (--realpath,
+    // since the path is absolute), so every other migration and table must stay exactly as it is, through the rollback,
+    // the re-migration and the refusal below.
+    $resultsFile = base_path('database/migrations/'.PRC_MIGRATION.'.php');
+    $outside = fn (): array => [
+        'migrations' => DB::table('migrations')->where('migration', '!=', PRC_MIGRATION)->orderBy('id')->get()->map(fn ($row) => (array) $row)->all(),
+        'tables' => collect(Schema::getTableListing(null, false))->reject(fn (string $table) => $table === 'purchase_results')->sort()->values()->all(),
+    ];
+    $outsideBefore = $outside();
 
-    // CP2 again over that data: every value kept, the constraints back.
+    // Back to the CP1 schema (allowed: no result exists); no value changes. The rollback takes the last batch, so the
+    // results migration must be in it.
+    expect(DB::table('migrations')->where('migration', PRC_MIGRATION)->value('batch'))->toEqual(DB::table('migrations')->max('batch'));
+    Artisan::call('migrate:rollback', ['--path' => $resultsFile, '--realpath' => true, '--force' => true]);
+    expect(Schema::hasTable('purchase_results'))->toBeFalse()
+        ->and(prcRows())->toBe($before)
+        ->and($outside())->toBe($outsideBefore);
+
+    // CP2 again over that data: every value kept, the constraints back, everything outside the results table unchanged.
     Artisan::call('migrate', ['--force' => true]);
     expect(prcRows())->toBe($before)
         ->and(prcSchema())->toEqual($schema)
         ->and(PurchaseResult::count())->toBe(0)
+        ->and($outside())->toBe($outsideBefore)
         ->and(Artisan::call('purchases:verify'))->toBe(0, Artisan::output());
 
     // The engine keeps working on it: a staff re-check delivers the review purchase's result, reconciliation the unclear one's.
@@ -353,14 +431,15 @@ it('rolls the results table back and forward over historical data, and refuses o
         ->and(PurchaseResult::count())->toBe(2)
         ->and(Artisan::call('purchases:verify'))->toBe(0, Artisan::output());
 
-    // Now a result exists: rolling back is refused before any change.
+    // Now a result exists: the same targeted rollback is refused before any change, in any table or migration.
     $rows = prcRows();
     $results = DB::table('purchase_results')->orderBy('id')->get()->map(fn ($row) => (array) $row)->all();
-    $steps = DB::table('migrations')->where('migration', '>', PRC_CP1_LAST)->count();
-    expect(fn () => Artisan::call('migrate:rollback', ['--step' => $steps, '--force' => true]))
+    $outsideBefore = $outside();
+    expect(fn () => Artisan::call('migrate:rollback', ['--path' => $resultsFile, '--realpath' => true, '--force' => true]))
         ->toThrow(RuntimeException::class, 'Refusing to roll back: NIN/BVN purchases have stored results, which would be lost. Nothing was changed.');
     expect(prcSchema())->toEqual($schema)
         ->and(prcRows())->toBe($rows)
         ->and(DB::table('purchase_results')->orderBy('id')->get()->map(fn ($row) => (array) $row)->all())->toBe($results)
-        ->and(DB::table('migrations')->where('migration', PRC_MIGRATION)->exists())->toBeTrue();
+        ->and(DB::table('migrations')->where('migration', PRC_MIGRATION)->exists())->toBeTrue()
+        ->and($outside())->toBe($outsideBefore);
 });

@@ -100,14 +100,22 @@ function xpcRun(string $script, array $commands, array $env = []): array
         }
     })->start();
 
-    $deadline = microtime(true) + 60;
-    while (count(glob($barrier.'.ready.*')) < count($commands) && microtime(true) < $deadline) {
-        usleep(10_000);
+    try {
+        $deadline = microtime(true) + 60;
+        while (count(glob($barrier.'.ready.*')) < count($commands) && microtime(true) < $deadline) {
+            usleep(10_000);
+        }
+        expect(count(glob($barrier.'.ready.*')))->toBe(count($commands));
+        touch($barrier);
+        $results = $pool->wait();
+    } finally {
+        $pool->stop(2); // ends any worker still at the barrier; after a normal wait nothing is running
+        foreach ([$barrier, ...glob($barrier.'.ready.*')] as $file) {
+            if (is_file($file)) {
+                unlink($file);
+            }
+        }
     }
-    expect(count(glob($barrier.'.ready.*')))->toBe(count($commands));
-    touch($barrier);
-    $results = $pool->wait();
-    array_map('unlink', [$barrier, ...glob($barrier.'.ready.*')]);
 
     $lines = [];
     foreach ($results->collect() as $result) {
@@ -254,7 +262,13 @@ it('delivers one result when scheduled reconciliation and staff re-checks race',
         ...array_fill(0, 5, ['recheck', $staff->id, $purchase->id, 2, 'succeeded,succeeded', 'fixture', 60]),
     ]));
 
-    expect($results->where('result', 'error')->values()->all())->toBe([])
+    // Five workers of each kind, two calls each: one JSON line per call.
+    $reconciles = $results->filter(fn ($line) => array_key_exists('stats', $line));
+    $rechecks = $results->filter(fn ($line) => array_key_exists('purchase', $line));
+    expect($results->where('result', '!=', 'ok')->values()->all())->toBe([])
+        ->and($reconciles)->toHaveCount(10)
+        ->and($rechecks)->toHaveCount(10)
+        ->and($reconciles->sum(fn ($line) => $line['stats']['errors']))->toBe(0)
         ->and($purchase->fresh()->status)->toBe(PurchaseStatus::Successful)
         ->and(PurchaseResult::count())->toBe(1);
     xpcSettledOnce($purchase);
@@ -271,12 +285,40 @@ it('produces exactly one outcome, never a result and a refund, when re-checks ge
             ...array_fill(0, 5, ['reconcile', 0, 0, 2, 'failed_definite,failed_definite', 'none', 50]),
         ]));
 
-        expect($results->where('result', 'error')->values()->all())->toBe([])
+        // Five workers of each kind, two calls each: one JSON line per call.
+        $reconciles = $results->filter(fn ($line) => array_key_exists('stats', $line));
+        $rechecks = $results->filter(fn ($line) => array_key_exists('purchase', $line));
+        expect($results->where('result', '!=', 'ok')->values()->all())->toBe([])
+            ->and($reconciles)->toHaveCount(10)
+            ->and($rechecks)->toHaveCount(10)
+            ->and($reconciles->sum(fn ($line) => $line['stats']['errors']))->toBe(0)
             ->and($purchase->fresh()->status)->toBeIn([PurchaseStatus::Successful, PurchaseStatus::Failed]);
+
+        // The final outcome, from the purchase's status, its one attempt, its result and its refund.
+        $purchase->refresh();
+        $successful = $purchase->status === PurchaseStatus::Successful;
+        $attempts = PurchaseAttempt::where('purchase_id', $purchase->id)->get();
+        $stored = PurchaseResult::where('purchase_id', $purchase->id)->get();
+        $refunds = Transaction::where('idempotency_key', 'purchase-refund:'.$purchase->reference)->get();
+        expect($results)->toHaveCount(20)
+            ->and($reconciles->sum(fn ($line) => $line['stats']['review']))->toBe(0)
+            ->and($rechecks->pluck('status')->unique()->values()->all())->toBe([$purchase->status->value])
+            ->and($attempts)->toHaveCount(1)
+            ->and($attempts->sole()->status)->toBe($successful ? PurchaseAttemptStatus::Succeeded : PurchaseAttemptStatus::FailedDefinite)
+            ->and($purchase->successful_attempt_id)->toEqual($successful ? $attempts->sole()->id : null)
+            ->and($stored)->toHaveCount($successful ? 1 : 0)
+            ->and($stored->pluck('purchase_id')->all())->toEqual($successful ? [$purchase->id] : [])
+            ->and($stored->pluck('purchase_attempt_id')->all())->toEqual($successful ? [$purchase->successful_attempt_id] : [])
+            ->and($refunds)->toHaveCount($successful ? 0 : 1)
+            ->and($purchase->refund_transaction_id)->toEqual($successful ? null : $refunds->sole()->id);
         xpcSettledOnce($purchase);
         $outcomes[] = $purchase->fresh()->status->value;
     }
-    expect(PurchaseResult::count())->toBe(count(array_keys($outcomes, 'successful')));
+    expect(PurchaseResult::count())->toBe(count(array_keys($outcomes, 'successful')))
+        ->and(Transaction::where('idempotency_key', 'like', 'purchase-refund:%')->count())->toBe(count(array_keys($outcomes, 'failed')))
+        ->and(Transaction::where('idempotency_key', 'like', 'purchase:%')->count())->toBe(3)
+        ->and(Purchase::count())->toBe(3)
+        ->and(PurchaseStatusChange::whereIn('new_status', ['successful', 'failed'])->count())->toBe(3);
 });
 
 it('keeps a success without a usable result unclear under parallel re-checks: no result, no success, no refund', function (string $results) {
@@ -289,9 +331,16 @@ it('keeps a success without a usable result unclear under parallel re-checks: no
     ]));
 
     $purchase->refresh();
-    expect($lines->where('result', 'error')->values()->all())->toBe([])
+    // Five workers of each kind, three calls each: one JSON line per call. Each staff re-check of this unclear
+    // purchase adds one to check_count; reconciliation may add more.
+    $reconciles = $lines->filter(fn ($line) => array_key_exists('stats', $line));
+    $rechecks = $lines->filter(fn ($line) => array_key_exists('purchase', $line));
+    expect($lines->where('result', '!=', 'ok')->values()->all())->toBe([])
+        ->and($reconciles)->toHaveCount(15)
+        ->and($rechecks)->toHaveCount(15)
+        ->and($reconciles->sum(fn ($line) => $line['stats']['errors']))->toBe(0)
         ->and($purchase->status)->toBe(PurchaseStatus::Pending)
-        ->and($purchase->check_count)->toBeGreaterThanOrEqual(1)
+        ->and($purchase->check_count)->toBeGreaterThanOrEqual(15)
         ->and($purchase->attempts()->sole()->status)->toBe(PurchaseAttemptStatus::Unknown)
         ->and($purchase->attempts()->sole()->error_code)->toBe('result_missing');
     xpcSettledOnce($purchase);
