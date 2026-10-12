@@ -41,16 +41,78 @@ require_once __DIR__.'/../Support/Purchases/helpers.php';
 
 const PIT_CP1 = ['2026_10_04_100000_add_recipient_type_to_purchases', '2026_10_04_100100_create_purchase_identity_recipients_table'];
 
+const PIT_CP2 = '2026_10_04_120000_create_purchase_results_table';
+
+/** The migrations after CP2 (referral, commission and KYC), in migration order. */
+const PIT_LATER = [
+    '2026_10_07_100000_create_referral_and_commission_tables',
+    '2026_10_08_100000_create_kyc_permissions',
+    '2026_10_08_100100_create_kyc_configuration_tables',
+    '2026_10_09_100000_extend_kyc_submissions_for_snapshots',
+    '2026_10_09_100100_create_kyc_submission_snapshot_tables',
+    '2026_10_09_100200_create_kyc_review_and_open_submission_tables',
+    '2026_10_09_100300_create_kyc_document_and_audit_tables',
+    '2026_10_09_100400_create_kyc_history_immutability_triggers',
+];
+
+/** The tables the CP1 and CP2 migrations create; their rollbacks drop them. */
+const PIT_CP_TABLES = ['purchase_identity_recipients', 'purchase_results'];
+
+/** The tables the PIT_LATER migrations create; their rollbacks drop them. */
+const PIT_LATER_TABLES = [
+    'referral_codes', 'referrals', 'commission_settings', 'commission_setting_changes', 'commissions', 'commission_actions', 'failed_commission_attempts',
+    'kyc_requirements', 'kyc_requirement_changes', 'kyc_profiles', 'kyc_submissions',
+    'kyc_submission_requirements', 'kyc_submission_identities', 'kyc_reviews', 'kyc_open_submissions', 'kyc_documents', 'kyc_audit_events',
+];
+
 /** The last Phase 10 migration: the Phase 10 schema is everything up to and including it, whatever later checkpoints add. */
 const PIT_PHASE10_LAST = '2026_10_03_170200_add_purchase_integrity_constraints';
 
-/** Rolls back every migration newer than $last, newest first (nothing when there is none). */
-function pitRollBackAfter(string $last): void
+/** Absolute paths of the named migration files, for a rollback that names exactly those migrations. */
+function pitPaths(array $names): array
 {
-    $steps = DB::table('migrations')->where('migration', '>', $last)->count();
-    if ($steps > 0) {
-        Artisan::call('migrate:rollback', ['--step' => $steps, '--force' => true]);
-    }
+    return array_map(fn (string $name) => database_path('migrations/'.$name.'.php'), $names);
+}
+
+/** Table names in the test database as MariaDB reports them, sorted. Scoped: a null schema lists the development database too. */
+function pitTables(): array
+{
+    return collect(Schema::getTableListing(DB::connection()->getDatabaseName(), false))->sort()->values()->all();
+}
+
+/** Every migration row as stored, in id order. */
+function pitMigrationRows(): array
+{
+    return DB::table('migrations')->orderBy('id')->get()->map(fn ($row) => (array) $row)->all();
+}
+
+/** The rows whose migration is not one of $names. */
+function pitOutside(array $rows, array $names): array
+{
+    return collect($rows)->reject(fn (array $row) => in_array($row['migration'], $names, true))->values()->all();
+}
+
+/**
+ * Rolls back exactly $names through their own migration files and proves it. Before: each is applied in the newest
+ * batch (the one a rollback without --step reads), and each of $tables exists. After: none is applied, the $tables are
+ * gone, and every other migration row and table is exactly as it was. Laravel skips a migration whose file is not in
+ * the path with only a warning, so a rollback that matched nothing would otherwise pass silently.
+ *
+ * @param  list<string>  $names
+ * @param  list<string>  $tables
+ */
+function pitRollBackOnly(array $names, array $tables): void
+{
+    $rows = pitMigrationRows();
+    $tablesBefore = pitTables();
+    $applied = collect($rows)->whereIn('migration', $names);
+    expect($applied->pluck('migration')->sort()->values()->all())->toBe(collect($names)->sort()->values()->all())
+        ->and($applied->pluck('batch')->unique()->values()->all())->toBe([max(array_column($rows, 'batch'))])
+        ->and(array_values(array_diff($tables, $tablesBefore)))->toBe([]);
+
+    expect(Artisan::call('migrate:rollback', ['--path' => pitPaths($names), '--realpath' => true, '--force' => true]))->toBe(0, Artisan::output());
+    expect(pitMigrationRows())->toBe(pitOutside($rows, $names))
+        ->and(pitTables())->toBe(array_values(array_diff($tablesBefore, $tables)));
 }
 
 beforeEach(function () {
@@ -125,7 +187,7 @@ function pitChecks(): array
         ->where('TABLE_NAME', 'purchases')->orderBy('CONSTRAINT_NAME')->pluck('CONSTRAINT_NAME')->all();
 }
 
-/** The CP1 part of the schema as MariaDB reports it. */
+/** The schema as MariaDB reports it: the CP1 and CP2 parts, every table name and every migration row. */
 function pitSchema(): array
 {
     return [
@@ -137,6 +199,8 @@ function pitSchema(): array
         'migrations' => DB::table('migrations')->whereIn('migration', PIT_CP1)->orderBy('migration')->pluck('migration')->all(),
         'results' => Schema::hasTable('purchase_results') ? Schema::getColumns('purchase_results') : null,
         'later_migrations' => DB::table('migrations')->where('migration', '>', PIT_PHASE10_LAST)->orderBy('migration')->pluck('migration')->all(),
+        'migration_rows' => pitMigrationRows(),
+        'tables' => pitTables(),
     ];
 }
 
@@ -172,14 +236,22 @@ function pitRace(int $workers, int $userId, int $planId, int $count, string $key
         }
     })->start();
 
-    $deadline = microtime(true) + 60;
-    while (count(glob($barrier.'.ready.*')) < $workers && microtime(true) < $deadline) {
-        usleep(10_000);
+    try {
+        $deadline = microtime(true) + 60;
+        while (count(glob($barrier.'.ready.*')) < $workers && microtime(true) < $deadline) {
+            usleep(10_000);
+        }
+        expect(count(glob($barrier.'.ready.*')))->toBe($workers);
+        touch($barrier);
+        $results = $pool->wait();
+    } finally {
+        $pool->stop(2); // ends any worker still at the barrier; after a normal wait nothing is running
+        foreach ([$barrier, ...glob($barrier.'.ready.*')] as $file) {
+            if (is_file($file)) {
+                unlink($file);
+            }
+        }
     }
-    expect(count(glob($barrier.'.ready.*')))->toBe($workers);
-    touch($barrier);
-    $results = $pool->wait();
-    array_map('unlink', [$barrier, ...glob($barrier.'.ready.*')]);
 
     $lines = [];
     foreach ($results->collect() as $result) {
@@ -220,7 +292,10 @@ it('keeps historical Phase 10 purchases identical through rollback and re-migrat
     $before = pitRows();
 
     // Back to the Phase 10 schema (allowed: every purchase is a phone purchase, none has a result); no value changes.
-    pitRollBackAfter(PIT_PHASE10_LAST); // CP1 and every later checkpoint, newest first
+    $tail = [...PIT_CP1, PIT_CP2, ...PIT_LATER];
+    $tablesBefore = pitTables();
+    $migrationsBefore = pitMigrationRows();
+    pitRollBackOnly($tail, [...PIT_CP_TABLES, ...PIT_LATER_TABLES]); // CP1, CP2 and every later checkpoint
     $columns = collect(Schema::getColumns('purchases'))->keyBy('name');
     expect($columns->has('recipient_type'))->toBeFalse()
         ->and($columns['recipient']['nullable'])->toBeFalse()
@@ -232,7 +307,7 @@ it('keeps historical Phase 10 purchases identical through rollback and re-migrat
     $historical = pitRows();
     expect($historical)->toBe(pitWithout($before, 'recipient_type'));
 
-    // CP1 again over that historical data: every value kept (updated_at included), each purchase reads as phone.
+    // The tail again over that historical data: every value kept (updated_at included), each purchase reads as phone.
     Artisan::call('migrate', ['--force' => true]);
     $after = pitRows();
     expect(pitWithout($after, 'recipient_type'))->toBe($historical)
@@ -241,7 +316,9 @@ it('keeps historical Phase 10 purchases identical through rollback and re-migrat
         ->and(PurchaseIdentityRecipient::count())->toBe(0)
         ->and(Schema::hasTable('purchase_results'))->toBeTrue()
         ->and(PurchaseResult::count())->toBe(0)
-        ->and(pitChecks())->toBe(['purchases_recipient_by_type']);
+        ->and(pitChecks())->toBe(['purchases_recipient_by_type'])
+        ->and(pitTables())->toBe($tablesBefore)
+        ->and(pitOutside(pitMigrationRows(), $tail))->toBe(pitOutside($migrationsBefore, $tail));
 
     // The Phase 10 flows keep working on them.
     FakeProvider::$calls = [];
@@ -301,24 +378,24 @@ it('refuses to roll back while a NIN purchase exists, leaving the schema and dat
     FakeProvider::$purchaseScript = ['succeeded'];
     FakeProvider::$resultScript = [FakeProvider::fixtureFields()]; // a NIN success needs its result (Phase 11 CP2)
     $nin = puxService()->purchase($user, pitNinPlan(), pitNumber(), null, 'nin', null, true);
-    pitRollBackAfter('2026_10_04_120000_create_purchase_results_table'); // later checkpoints first (Phase 12 on): nothing of theirs blocks it here
+    pitRollBackOnly(PIT_LATER, PIT_LATER_TABLES); // the later checkpoints first, so the CP2 results migration is the newest
     $schema = pitSchema();
     $rows = pitRows();
     $results = DB::table('purchase_results')->orderBy('id')->get()->map(fn ($row) => (array) $row)->all();
-    $cp1Only = ['--path' => array_map(fn (string $name) => database_path('migrations/'.$name.'.php'), PIT_CP1), '--realpath' => true];
-    $toPhase10 = DB::table('migrations')->where('migration', '>', PIT_PHASE10_LAST)->count();
+    $cp1Only = ['--path' => pitPaths(PIT_CP1), '--realpath' => true, '--force' => true];
+    $toPhase10 = ['--path' => pitPaths([PIT_CP2, ...PIT_CP1]), '--realpath' => true, '--force' => true];
 
     // Rolling back to Phase 10 stops at the newest migration with data: the stored result.
     expect($nin->status)->toBe(PurchaseStatus::Successful)
         ->and(PurchaseResult::count())->toBe(1)
-        ->and(fn () => Artisan::call('migrate:rollback', ['--step' => $toPhase10, '--force' => true]))
+        ->and(fn () => Artisan::call('migrate:rollback', $toPhase10))
         ->toThrow(RuntimeException::class, 'Refusing to roll back: NIN/BVN purchases have stored results, which would be lost. Nothing was changed.');
     expect(pitSchema())->toBe($schema)
         ->and(pitRows())->toBe($rows)
         ->and(DB::table('purchase_results')->orderBy('id')->get()->map(fn ($row) => (array) $row)->all())->toBe($results);
 
     // The CP1 migrations refuse on their own too (later checkpoints' files left out of the run).
-    expect(fn () => Artisan::call('migrate:rollback', ['--step' => $toPhase10, '--force' => true, ...$cp1Only]))
+    expect(fn () => Artisan::call('migrate:rollback', $cp1Only))
         ->toThrow(RuntimeException::class, 'Refusing to roll back: NIN/BVN purchases have identity recipients, which would be lost. Nothing was changed.');
     expect(pitSchema())->toBe($schema)
         ->and(pitRows())->toBe($rows)

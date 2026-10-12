@@ -398,7 +398,7 @@ it('rolls the results table back and forward over historical data, and refuses o
     $resultsFile = base_path('database/migrations/'.PRC_MIGRATION.'.php');
     $outside = fn (): array => [
         'migrations' => DB::table('migrations')->where('migration', '!=', PRC_MIGRATION)->orderBy('id')->get()->map(fn ($row) => (array) $row)->all(),
-        'tables' => collect(Schema::getTableListing(null, false))->reject(fn (string $table) => $table === 'purchase_results')->sort()->values()->all(),
+        'tables' => collect(Schema::getTableListing(DB::connection()->getDatabaseName(), false))->reject(fn (string $table) => $table === 'purchase_results')->sort()->values()->all(),
     ];
     $outsideBefore = $outside();
 

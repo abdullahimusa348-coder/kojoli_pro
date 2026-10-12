@@ -259,7 +259,7 @@ it('enforces the unique keys and the restricting and compound foreign keys', fun
 });
 
 it('rolls back cleanly while empty, and refuses before any schema change while a row exists', function () {
-    $snapshot = fn () => ['tables' => collect(Schema::getTables())->pluck('name')->sort()->values()->all(), 'checks' => rstChecks(),
+    $snapshot = fn () => ['tables' => collect(Schema::getTables(DB::connection()->getDatabaseName()))->pluck('name')->sort()->values()->all(), 'checks' => rstChecks(),
         'foreign_keys' => collect(RST_TABLES)->mapWithKeys(fn (string $table) => [$table => Schema::hasTable($table) ? Schema::getForeignKeys($table) : null])->all(),
         // A set, not an order: migrating again puts this migration after the Phase 13 KYC ones.
         'migrations' => DB::table('migrations')->pluck('migration')->sort()->values()->all()];
