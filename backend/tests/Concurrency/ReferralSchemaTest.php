@@ -262,7 +262,13 @@ it('rolls back cleanly while empty, and refuses before any schema change while a
     $snapshot = fn () => ['tables' => collect(Schema::getTables(DB::connection()->getDatabaseName()))->pluck('name')->sort()->values()->all(), 'checks' => rstChecks(),
         'foreign_keys' => collect(RST_TABLES)->mapWithKeys(fn (string $table) => [$table => Schema::hasTable($table) ? Schema::getForeignKeys($table) : null])->all(),
         // A set, not an order: migrating again puts this migration after the Phase 13 KYC ones.
-        'migrations' => DB::table('migrations')->pluck('migration')->sort()->values()->all()];
+        'migrations' => DB::table('migrations')->pluck('migration')->sort()->values()->all(),
+        // Every other migration row with its batch: a rollback must leave each one as it was.
+        'migration_batches' => DB::table('migrations')->where('migration', '!=', RST_MIGRATION)->pluck('batch', 'migration')->all(),
+        // Every table but the referral ones, with its columns, indexes and foreign keys.
+        'schema' => collect(Schema::getTables(DB::connection()->getDatabaseName()))->pluck('name')
+            ->reject(fn (string $table) => in_array($table, RST_TABLES, true))
+            ->mapWithKeys(fn (string $table) => [$table => [Schema::getColumns($table), Schema::getIndexes($table), Schema::getForeignKeys($table)]])->all()];
     $before = $snapshot();
 
     // This migration and every later one are counted; the later Phase 13 KYC migrations are skipped (not in this path).
@@ -270,7 +276,9 @@ it('rolls back cleanly while empty, and refuses before any schema change while a
     Artisan::call('migrate:rollback', ['--step' => $steps, '--path' => [database_path('migrations/'.RST_MIGRATION.'.php')], '--realpath' => true, '--force' => true]);
     expect(collect(RST_TABLES)->filter(fn (string $table) => Schema::hasTable($table))->all())->toBe([])
         ->and(rstChecks())->toBe([])
-        ->and(DB::table('migrations')->where('migration', RST_MIGRATION)->exists())->toBeFalse();
+        ->and(DB::table('migrations')->where('migration', RST_MIGRATION)->exists())->toBeFalse()
+        ->and($snapshot()['migration_batches'])->toEqual($before['migration_batches'])
+        ->and($snapshot()['schema'])->toEqual($before['schema']);
 
     Artisan::call('migrate', ['--force' => true]);
     expect($snapshot())->toEqual($before);
