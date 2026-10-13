@@ -7,6 +7,7 @@ use App\Http\Controllers\Admin\CustomerController;
 use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
 use App\Http\Controllers\Admin\FailedCommissionAttemptController;
 use App\Http\Controllers\Admin\KycRequirementController;
+use App\Http\Controllers\Admin\KycReviewController;
 use App\Http\Controllers\Admin\ModulePlaceholderController;
 use App\Http\Controllers\Admin\PaymentController;
 use App\Http\Controllers\Admin\PaymentGatewayController;
@@ -218,9 +219,11 @@ Route::prefix('admin')->name('admin.')->group(function () {
                     ->name('.password-reset');
             });
 
-        // KYC requirements (Phase 13 CP1): configuration only. kyc.view opens the page and its change history; changing a
-        // requirement needs kyc.requirements (checked by the routes, and again in the action). Nothing is created or deleted
-        // here, and no requirement is enforced in this version. Requirements are addressed by their key.
+        // KYC (Phase 13). The requirements page (CP1) needs kyc.view, and changing a requirement needs kyc.requirements, checked by
+        // the routes and again in the action. The review queue (CP2b-1) needs kyc.view to look and kyc.review to decide, checked by
+        // the routes and again in DecideKycSubmission and in the ledger. A decision is recorded only by KycSubmissionLedger::decide().
+        // Nothing else is created or deleted here, and no requirement is enforced in this version. Requirements are addressed by
+        // their key, submissions by their id.
         Route::middleware([SystemPermission::AdminAccess->middleware(), SystemPermission::KycView->middleware()])
             ->prefix('kyc')->name('kyc')->group(function () {
                 Route::get('requirements', [KycRequirementController::class, 'index'])->name('.requirements');
@@ -229,6 +232,14 @@ Route::prefix('admin')->name('admin.')->group(function () {
                         ->where('requirement', '[a-z][a-z0-9-]{1,39}')->name('.requirements.edit');
                     Route::put('requirements/{requirement}', [KycRequirementController::class, 'update'])
                         ->where('requirement', '[a-z][a-z0-9-]{1,39}')->middleware('throttle:30,1')->name('.requirements.update');
+                });
+
+                // The review queue (Phase 13 CP2b-1): the open submissions, one submission, and its decision (kyc.review only).
+                Route::get('/', [KycReviewController::class, 'index'])->name('.index');
+                Route::get('submissions/{submission}', [KycReviewController::class, 'show'])->whereNumber('submission')->name('.submissions.show');
+                Route::middleware(SystemPermission::KycReview->middleware())->group(function () {
+                    Route::post('submissions/{submission}/decision', [KycReviewController::class, 'decide'])
+                        ->whereNumber('submission')->middleware('throttle:30,1')->name('.submissions.decide');
                 });
             });
 

@@ -49,5 +49,6 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withExceptions(function (Exceptions $exceptions): void {
         // Provider credential fields are write-only: never flash them back as old input.
         // A NIN or BVN (Phase 11 CP3) is never flashed either, so it never reaches the session.
-        $exceptions->dontFlash(['credentials', 'identity_number']);
+        // A KYC decision reason (Phase 13 CP2b-1) is never flashed either, for the same reason.
+        $exceptions->dontFlash(['credentials', 'identity_number', 'decision_reason']);
     })->create();

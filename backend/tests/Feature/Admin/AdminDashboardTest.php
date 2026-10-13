@@ -16,8 +16,8 @@ function staffWith(SystemRole $role): SystemUser
 /** Modules each role may see and open. Reserved module permissions are not granted to any role yet. */
 dataset('role access', [
     'super admin' => [SystemRole::SuperAdmin, array_map(fn (AdminModule $m) => $m->value, AdminModule::cases())],
-    'manager' => [SystemRole::Manager, ['dashboard', 'users', 'kyc']],
-    'support' => [SystemRole::Support, ['dashboard', 'users', 'kyc']],
+    'manager' => [SystemRole::Manager, ['dashboard', 'users', 'kyc', 'kyc-review']],
+    'support' => [SystemRole::Support, ['dashboard', 'users', 'kyc', 'kyc-review']],
     'finance' => [SystemRole::Finance, ['dashboard', 'users']],
     'viewer' => [SystemRole::Viewer, ['dashboard', 'users']],
 ]);
