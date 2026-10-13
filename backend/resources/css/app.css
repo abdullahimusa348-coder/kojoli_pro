@@ -1,0 +1,29 @@
+@import 'tailwindcss';
+@import './theme.css';
+
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+@source '../../storage/framework/views/*.php';
+@source '../**/*.blade.php';
+@source '../**/*.js';
+
+@layer base {
+    html {
+        -webkit-text-size-adjust: 100%;
+    }
+    body {
+        @apply bg-white font-sans text-navy-900 antialiased;
+    }
+    :focus-visible {
+        @apply outline-2 outline-offset-2 outline-brand-600;
+    }
+    [x-cloak] {
+        display: none !important;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *, ::before, ::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
+    }
+}
