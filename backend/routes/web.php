@@ -40,6 +40,7 @@ use App\Http\Controllers\User\DashboardController;
 use App\Http\Controllers\User\ExamPinBuyController;
 use App\Http\Controllers\User\FundWalletController;
 use App\Http\Controllers\User\IdentityBuyController;
+use App\Http\Controllers\User\KycController;
 use App\Http\Controllers\User\PasswordController;
 use App\Http\Controllers\User\ProfileController;
 use App\Http\Controllers\User\PurchaseController as CustomerPurchaseController;
@@ -131,6 +132,14 @@ Route::middleware(['auth:web', 'auth.session'])->group(function () {
     // Referral page (Phase 12): Subscribers, Vendors and Affiliates only (an API User gets a 404, checked in the
     // controller). The first visit creates the Main Wallet and then the customer's referral code. Read-only otherwise.
     Route::get('referrals', CustomerReferralController::class)->middleware('verified.optional')->name('referrals');
+
+    // Verification status and requirements (Phase 13 CP2b-2a): read-only. The requirements that apply to the customer and the
+    // customer's own submissions, by reference. There is no form and no write route here: sending a submission waits for approval.
+    Route::middleware('verified.optional')->group(function () {
+        Route::get('kyc', [KycController::class, 'index'])->name('kyc');
+        Route::get('kyc/submissions/{reference}', [KycController::class, 'show'])->where('reference', 'KYC-[0-9A-Z]{26}')
+            ->name('kyc.submissions.show');
+    });
 
     Route::get('profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('profile', [ProfileController::class, 'update'])->name('profile.update');
