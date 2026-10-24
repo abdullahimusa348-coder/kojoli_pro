@@ -347,7 +347,7 @@ jobs:
           import xml.etree.ElementTree as ET
 
           EXPECTED = 16  # Change this in the same reviewed commit that adds or removes a test.
-          TEST_7 = '__pest_evaluable_refuses_the_trigger_migration_under_the_restricted_account__before_the_migration_changes_anything'
+          TEST_7 = 'it refuses the trigger migration under the restricted account, before the migration changes anything'
           cases = list(ET.parse(sys.argv[1]).getroot().iter('testcase'))
           skipped = [c for c in cases if c.find('skipped') is not None]
           failed = [c for c in cases if c.find('failure') is not None or c.find('error') is not None]
