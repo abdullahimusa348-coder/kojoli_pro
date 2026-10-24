@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Dedicated KYC MariaDB migration suite: the rollback and re-migration tests, run as the dedicated owner account. The hosted workflow (.github/workflows/kyc-mariadb.yml) runs this file and creates its own credentials
+    for each run. A local run uses the root-only runner kept outside this repository, which supplies the owner password
+    at run time, so no secret is stored here. The default suites (phpunit.xml and phpunit.concurrency.xml) do not run this file.
+    The connection is pinned to the local socket and port in the <env> and <server> entries below.
+    The tests migrate:fresh that database; never point it at a real one.
+-->
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true"
+>
+    <testsuites>
+        <testsuite name="KycMigrationsMariaDb">
+            <file>tests/MariaDbMigrations/KycMigrationMariaDbTest.php</file>
+        </testsuite>
+    </testsuites>
+    <!-- With ignoreSuppressionOfPhpWarnings enabled, PHPUnit's result collector can count the suppressed PHP warnings
+         that reach it. No hosted run has yet shown that this changes the exit status under fail-on-warning. A suppressed
+         warning raised inside a test body is handled by Laravel's error handler and never reaches PHPUnit, so this
+         setting cannot see it. -->
+    <source ignoreSuppressionOfPhpWarnings="true"/>
+    <php>
+        <env name="APP_ENV" value="testing"/>
+        <env name="APP_MAINTENANCE_DRIVER" value="file"/>
+        <env name="BCRYPT_ROUNDS" value="4"/>
+        <env name="CACHE_STORE" value="array"/>
+        <!-- Forced, so these pins win over shell-exported values and over .env. Socket only: a non-empty DB_SOCKET makes PDO
+             ignore DB_HOST and DB_PORT, so no TCP connection is opened. -->
+        <env name="DB_CONNECTION" value="mysql" force="true"/>
+        <env name="DB_DATABASE" value="nadabo_concurrency_test" force="true"/>
+        <env name="DB_URL" value="" force="true"/>
+        <env name="DB_HOST" value="localhost" force="true"/>
+        <env name="DB_PORT" value="3306" force="true"/>
+        <env name="DB_SOCKET" value="/run/mysqld/mysqld.sock" force="true"/>
+        <env name="DB_USERNAME" value="nadabo_concurrency" force="true"/>
+        <!-- The suite marker. The owner-only guard in the test file refuses every run without it. -->
+        <env name="NADABO_KYC_MIGRATIONS_SUITE" value="kyc-migrations-mariadb" force="true"/>
+        <!-- Laravel reads $_SERVER before $_ENV, and PHPUnit's <env> never writes $_SERVER. These <server> entries are
+             written unconditionally, so a database variable exported in the shell cannot point this suite elsewhere. -->
+        <server name="DB_CONNECTION" value="mysql"/>
+        <server name="DB_DATABASE" value="nadabo_concurrency_test"/>
+        <server name="DB_URL" value=""/>
+        <server name="DB_HOST" value="localhost"/>
+        <server name="DB_PORT" value="3306"/>
+        <server name="DB_SOCKET" value="/run/mysqld/mysqld.sock"/>
+        <server name="DB_USERNAME" value="nadabo_concurrency"/>
+        <server name="NADABO_KYC_MIGRATIONS_SUITE" value="kyc-migrations-mariadb"/>
+        <env name="MAIL_MAILER" value="array"/>
+        <env name="QUEUE_CONNECTION" value="sync"/>
+        <env name="SESSION_DRIVER" value="array"/>
+    </php>
+</phpunit>
