@@ -1,0 +1,434 @@
+name: KYC MariaDB suite
+
+# Runs the dedicated KYC migration suite (backend/tests/MariaDbMigrations/) against a MariaDB server
+# that this job installs on its own GitHub-hosted runner.
+#
+# Trust model. The job creates a database and accounts on the machine it runs on, and it runs the code
+# of the commit under test. A pull request from a fork runs that fork's code, so:
+# - Runner selection is the boundary: the job must run on a GitHub-hosted runner. The first step checks
+#   RUNNER_ENVIRONMENT, which catches a self-hosted runner registered under this label by mistake. A
+#   workflow file can change its own checks, so that step cannot stop a hostile edit to this file.
+# - The token is read-only, and nothing in this file refers to a secret. Pull requests from forks
+#   receive no secrets. Fork code runs only after a maintainer approves the run. The repository must be
+#   set to require approval for all outside collaborators. This file cannot set it.
+# - Every credential is generated for this run and masked in the log. Passwords reach mysql on standard
+#   input and reach the suite through its environment. None is on a command line or in a kept file.
+#
+# Cleanup. Each object the run creates is recorded only after its CREATE has succeeded, and cleanup
+# removes the recorded objects on exit, on failure, and on INT, TERM and HUP. SIGKILL cannot be trapped,
+# and a job timeout can end the job without running the trap. The hosted VM, which GitHub discards at the
+# end of the job, is the final cleanup boundary.
+#
+# Action pins. Each action below is pinned to a full 40-character commit SHA, and its release tag is
+# written in a comment. A tag can be moved, but a commit SHA cannot. A pin shows which code runs. It does
+# not show that the code is safe. The job's pin check fails on any other form. Change a pin only in a
+# reviewed commit that names the new release.
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kyc-mariadb-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  kyc-mariadb:
+    name: KYC migrations on MariaDB
+    # GitHub-hosted only; the first step enforces it before anything is installed or created.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Confirm the runner is GitHub-hosted
+        run: |
+          set -euo pipefail
+          if [[ "${RUNNER_ENVIRONMENT:-}" != "github-hosted" ]]; then
+            echo "::error::This job creates a database and accounts on its runner, so it runs on GitHub-hosted runners only. RUNNER_ENVIRONMENT is '${RUNNER_ENVIRONMENT:-unset}'."
+            exit 1
+          fi
+          echo "RUNNER_ENVIRONMENT is github-hosted."
+
+      - name: Check out the commit
+        # v6.1.0 adds the input allow-unsafe-pr-checkout (default false). It matters only for checkouts of fork
+        # code under pull_request_target or workflow_run, which this file does not use, so the default stays.
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Check that every action is pinned to a full commit SHA
+        run: |
+          set -euo pipefail
+          file=.github/workflows/kyc-mariadb.yml
+          # A tag can move. Only a full 40-character commit SHA is fixed, so only that form passes.
+          uses_lines="$(grep -nE '^[[:space:]]*(-[[:space:]]+)?uses:' "${file}" || true)"
+          if [[ -z "${uses_lines}" ]]; then
+            echo "::error::No action reference was found in ${file}, so the pin check cannot run."
+            exit 1
+          fi
+          bad="$(grep -vE '@[0-9a-f]{40}([[:space:]]|$)' <<< "${uses_lines}" || true)"
+          if [[ -n "${bad}" ]]; then
+            echo "::error::These action references are not pinned to a full 40-character commit SHA:"
+            echo "${bad}"
+            exit 1
+          fi
+          echo "Every action reference is pinned to a full 40-character commit SHA."
+
+      - name: Set up PHP 8.3
+        # 2.40.0 is an annotated tag. The pin is its commit, not the tag object.
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962  # 2.40.0
+        with:
+          php-version: '8.3'
+          extensions: pdo_mysql, mbstring, zip
+          coverage: none
+
+      - name: Install MariaDB on the runner
+        run: |
+          set -euo pipefail
+          # A hosted image may ship MySQL, which would hold the same port and socket path.
+          sudo systemctl stop mysql 2>/dev/null || true
+          sudo DEBIAN_FRONTEND=noninteractive apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y mariadb-server
+          sudo systemctl start mariadb
+
+      - name: Check the server settings the suite depends on
+        run: |
+          set -euo pipefail
+          out="$(sudo mysql --socket=/run/mysqld/mysqld.sock -N -B -e \
+            "SELECT VERSION(), @@socket, @@port, @@log_bin, @@general_log, @@sql_mode")"
+          echo "${out}"
+          IFS=$'\t' read -r version sock port log_bin general_log _ <<< "${out}"
+          [[ "${version}" == *MariaDB* ]] || { echo "::error::The server is not MariaDB."; exit 1; }
+          [[ "${sock}" == /run/mysqld/mysqld.sock && "${port}" == 3306 ]] \
+            || { echo "::error::The socket or port differs from the suite's pins."; exit 1; }
+          [[ "${log_bin}" == 0 && "${general_log}" == 0 ]] \
+            || { echo "::error::Binary or general query logging is on; account statements would be logged."; exit 1; }
+
+      - name: Install Composer dependencies
+        working-directory: backend
+        run: composer install --prefer-dist --no-interaction --no-progress
+
+      - name: Provision temporary accounts, run the suite, remove the accounts
+        working-directory: backend
+        run: |
+          set -euo pipefail
+          umask 077
+          work="$(mktemp -d "${RUNNER_TEMP}/kyc-mariadb.XXXXXX")"
+          junit="${work}/junit.xml"
+          console="${work}/console.txt"
+          sock=/run/mysqld/mysqld.sock
+
+          # One entry per object this run creates, added only after that object's CREATE has succeeded. A CREATE
+          # that fails, because the object already exists for example, adds nothing, so cleanup never removes an
+          # object this run did not create. Registering before the CREATE would close the window in which a kill
+          # leaves an object behind, but cleanup could then remove an object another process created in the
+          # check-to-create gap. This job runs alone on a hosted VM, so that gap is theoretical, and the order used
+          # here never removes what it did not create.
+          cleanup_sql=()
+
+          mysql_root() {
+            sudo timeout -k 5 60 mysql --socket="${sock}" "$@"
+          }
+
+          cleanup() {
+            local rc=$?
+            local failed=0
+            local i
+            # Newest entry first. Every entry is attempted, even after an earlier one fails.
+            for ((i = ${#cleanup_sql[@]} - 1; i >= 0; i--)); do
+              if ! mysql_root -e "${cleanup_sql[i]}"; then
+                echo "::error::Cleanup could not run: ${cleanup_sql[i]}. Remove that object by hand if it still exists."
+                failed=1
+              fi
+            done
+            # Remove the environment file only when this run created it.
+            if [[ "${env_owned:-0}" == 1 ]] && ! rm -f -- "${env_file}"; then
+              echo "::error::Cleanup could not remove the environment file this run created."
+              failed=1
+            fi
+            if ! rm -rf -- "${work}"; then
+              echo "::error::Cleanup could not remove ${work}."
+              failed=1
+            fi
+            # Keep the status of the test or setup. A cleanup failure turns a success into a failure.
+            if ((rc == 0 && failed)); then
+              rc=1
+            fi
+            exit "${rc}"
+          }
+          trap cleanup EXIT
+          # The codes are 128 plus the signal number. bash runs a handler after the foreground command ends, so the
+          # suite's timeout bounds how long a signal can wait.
+          trap 'exit 129' HUP
+          trap 'exit 130' INT
+          trap 'exit 143' TERM
+
+          # Each secret is hex or base64 and needs no quoting. Each is masked before anything can print it. A JSON
+          # encoder escapes "/" as "\/", so the escaped form of the raw key is masked and scanned as well.
+          owner_pw="$(openssl rand -hex 32)"
+          guard_pw="$(openssl rand -hex 32)"
+          app_key="base64:$(openssl rand -base64 32)"
+          raw_key="${app_key#base64:}"
+          json_raw_key="${raw_key//\//\\/}"
+          echo "::add-mask::${owner_pw}"
+          echo "::add-mask::${guard_pw}"
+          echo "::add-mask::${app_key}"
+          echo "::add-mask::${raw_key}"
+          echo "::add-mask::${json_raw_key}"
+
+          # No IF NOT EXISTS anywhere: each CREATE fails if its object exists. Statements that contain a password read
+          # it from standard input, so no password is on a command line.
+          mysql_root -e "CREATE DATABASE nadabo_concurrency_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+          cleanup_sql+=("DROP DATABASE IF EXISTS nadabo_concurrency_test")
+
+          # Grant-scope precondition. A database name in a GRANT is a pattern in which "_" matches any one character.
+          # Require that the unescaped name matches exactly this database, so that no other schema can be reached by
+          # the grants, whichever form of the name is granted below. SHOW DATABASES applies the same LIKE rules and
+          # needs no information_schema view. A failure here leaves the database registered, so cleanup removes it.
+          matches="$(mysql_root -N -B -e "SHOW DATABASES LIKE 'nadabo_concurrency_test'")"
+          if [[ "${matches}" != "nadabo_concurrency_test" ]]; then
+            echo "::error::More than one database matches the pattern nadabo_concurrency_test. No grant is made."
+            exit 1
+          fi
+
+          mysql_root <<SQL
+          CREATE USER 'nadabo_concurrency'@'localhost' IDENTIFIED BY '${owner_pw}';
+          SQL
+          cleanup_sql+=("DROP USER IF EXISTS 'nadabo_concurrency'@'localhost'")
+          # The database name is escaped, so "\_" is a literal underscore in the grant pattern and the grant reaches
+          # only this database. The grant statements are quoted heredocs, so the backticks and backslashes reach
+          # mysql unchanged. The privileges are the same as before the escape.
+          mysql_root <<'SQL'
+          GRANT SELECT, INSERT, DELETE, CREATE, DROP, REFERENCES, INDEX, ALTER, TRIGGER
+            ON `nadabo\_concurrency\_test`.* TO 'nadabo_concurrency'@'localhost';
+          SQL
+
+          mysql_root <<SQL
+          CREATE USER 'nadabo_kyc_guard'@'localhost' IDENTIFIED BY '${guard_pw}';
+          SQL
+          cleanup_sql+=("DROP USER IF EXISTS 'nadabo_kyc_guard'@'localhost'")
+          mysql_root <<'SQL'
+          GRANT SELECT ON `nadabo\_concurrency\_test`.* TO 'nadabo_kyc_guard'@'localhost';
+          SQL
+
+          # Verify the grants from the privilege tables and print only the difference from the expected list. The
+          # schema, table and column privileges come from mysql.db, mysql.tables_priv and mysql.columns_priv, whose
+          # columns MariaDB's own system-table definition lists. Routine and proxy grants come from mysql.procs_priv
+          # and mysql.proxies_priv, whose columns the same definition lists. The expected list has no line for either,
+          # so any row for an account is a difference. This step never selects from mysql.global_priv, which holds
+          # the account records, including authentication data. Global privileges come from
+          # information_schema.USER_PRIVILEGES, which selects only the grantee and the privilege name. The expected
+          # list includes each account's USAGE row, so a missing account row, or a GRANTEE literal that the server
+          # formats differently, leaves an expected line unmatched, and the diff fails. The step runs under set -e,
+          # so a failed query stops it. REPLACE(..., CHAR(92), '') strips the backslashes an escaped underscore may be
+          # stored with, so the stored name compares equal to the database name whichever form is stored.
+          actual="${work}/grants.actual"
+          expected="${work}/grants.expected"
+          mysql_root -N -B >"${actual}" <<'SQL'
+          SELECT CONCAT_WS(' ', 'schema', User, Host, REPLACE(Db, CHAR(92), ''),
+            CASE WHEN Select_priv = 'Y' THEN 'SELECT' END,
+            CASE WHEN Insert_priv = 'Y' THEN 'INSERT' END,
+            CASE WHEN Update_priv = 'Y' THEN 'UPDATE' END,
+            CASE WHEN Delete_priv = 'Y' THEN 'DELETE' END,
+            CASE WHEN Create_priv = 'Y' THEN 'CREATE' END,
+            CASE WHEN Drop_priv = 'Y' THEN 'DROP' END,
+            CASE WHEN Grant_priv = 'Y' THEN 'GRANT' END,
+            CASE WHEN References_priv = 'Y' THEN 'REFERENCES' END,
+            CASE WHEN Index_priv = 'Y' THEN 'INDEX' END,
+            CASE WHEN Alter_priv = 'Y' THEN 'ALTER' END,
+            CASE WHEN Create_tmp_table_priv = 'Y' THEN 'CREATE TEMPORARY TABLES' END,
+            CASE WHEN Lock_tables_priv = 'Y' THEN 'LOCK TABLES' END,
+            CASE WHEN Create_view_priv = 'Y' THEN 'CREATE VIEW' END,
+            CASE WHEN Show_view_priv = 'Y' THEN 'SHOW VIEW' END,
+            CASE WHEN Create_routine_priv = 'Y' THEN 'CREATE ROUTINE' END,
+            CASE WHEN Alter_routine_priv = 'Y' THEN 'ALTER ROUTINE' END,
+            CASE WHEN Execute_priv = 'Y' THEN 'EXECUTE' END,
+            CASE WHEN Event_priv = 'Y' THEN 'EVENT' END,
+            CASE WHEN Trigger_priv = 'Y' THEN 'TRIGGER' END,
+            CASE WHEN Delete_history_priv = 'Y' THEN 'DELETE HISTORY' END)
+          FROM mysql.db
+          WHERE User IN ('nadabo_concurrency', 'nadabo_kyc_guard') AND Host = 'localhost';
+          SELECT CONCAT_WS(' ', 'table', User, Host, REPLACE(Db, CHAR(92), ''), Table_name, Table_priv, Column_priv)
+          FROM mysql.tables_priv
+          WHERE User IN ('nadabo_concurrency', 'nadabo_kyc_guard') AND Host = 'localhost';
+          SELECT CONCAT_WS(' ', 'column', User, Host, REPLACE(Db, CHAR(92), ''), Table_name, Column_name, Column_priv)
+          FROM mysql.columns_priv
+          WHERE User IN ('nadabo_concurrency', 'nadabo_kyc_guard') AND Host = 'localhost';
+          SELECT CONCAT_WS(' ', 'routine', User, Host, Db, Routine_name, Routine_type, Proc_priv)
+          FROM mysql.procs_priv
+          WHERE User IN ('nadabo_concurrency', 'nadabo_kyc_guard');
+          SELECT CONCAT_WS(' ', 'proxy', User, Host, Proxied_user, Proxied_host, With_grant)
+          FROM mysql.proxies_priv
+          WHERE User IN ('nadabo_concurrency', 'nadabo_kyc_guard')
+            OR Proxied_user IN ('nadabo_concurrency', 'nadabo_kyc_guard');
+          SELECT CONCAT_WS(' ', 'global', GRANTEE, PRIVILEGE_TYPE)
+          FROM information_schema.USER_PRIVILEGES
+          WHERE GRANTEE IN ('''nadabo_concurrency''@''localhost''', '''nadabo_kyc_guard''@''localhost''');
+          SQL
+          LC_ALL=C sort -o "${actual}" "${actual}"
+
+          LC_ALL=C sort >"${expected}" <<'LIST'
+          global 'nadabo_concurrency'@'localhost' USAGE
+          global 'nadabo_kyc_guard'@'localhost' USAGE
+          schema nadabo_concurrency localhost nadabo_concurrency_test SELECT INSERT DELETE CREATE DROP REFERENCES INDEX ALTER TRIGGER
+          schema nadabo_kyc_guard localhost nadabo_concurrency_test SELECT
+          LIST
+          if ! diff -u "${expected}" "${actual}"; then
+            echo "::error::The grants do not match the expected privileges. The difference is shown above and names no secret. A missing global USAGE line means an account row was not found, or its GRANTEE form differs."
+            exit 1
+          fi
+          echo "Grants verified: the schema, table, column and global grants match, and neither account has a routine or proxy row."
+
+          # The suite reads backend/.env through phpdotenv, and a missing file warns once per test. This run creates an
+          # empty file only when none exists. Noclobber makes the creation fail on an existing path, so an existing file
+          # is never written. Ownership is recorded only after the creation succeeds, and cleanup removes only a file this
+          # run created. After the suite, a file this run created must still be empty. Its contents are never printed.
+          env_file="${PWD}/.env"
+          env_owned=0
+          if ( set -C; : > "${env_file}" ) 2>/dev/null; then
+            env_owned=1
+          fi
+
+          # Exit status and warnings. Pest exits with 2 when a test errors. It exits with 1 when a test fails, when a test
+          # triggers a PHPUnit-level warning, or when the suite is empty under --fail-on-empty-test-suite. Under
+          # --fail-on-warning it also exits with 1 when it counts PHP or user warnings. A suppressed PHP warning is counted
+          # only when phpunit.kyc-migrations-mariadb.xml sets ignoreSuppressionOfPhpWarnings. Pest's exit status does not
+          # consult --fail-on-risky, --fail-on-incomplete, --fail-on-skipped, --fail-on-notice or
+          # --fail-on-phpunit-deprecation, so those options change no exit status. PHP and user deprecations are not gated.
+          # This job checks skipped, failed and errored tests itself, from the JUnit report. Whether --fail-on-warning
+          # counts a warning on this path is not demonstrated: a recorded run printed PHP warnings and still exited 0.
+          # The record is in backend/docs/ARCHITECTURE.md, under the KYC MariaDB suite.
+          # Baseline rules. The eight --fail-on options below stay as configured. Do not remove or weaken any of them.
+          # Fix the cause instead. An observation run changes no gate. Record each observation run's result and its count
+          # of PHP and user deprecations in backend/docs/ARCHITECTURE.md. A failure in an observation run is still a failure.
+          # A vendor-gate exception needs separate written approval, a reason, an expiry date and a tracking item.
+          # A re-run is allowed only when the job dies before any test body runs, such as at checkout or install.
+          # The suite's status is captured rather than trusted to set -e, so the checks below run even when it fails.
+          set +e
+          DB_PASSWORD="${owner_pw}" \
+          NADABO_KYC_GUARD_DB_USERNAME=nadabo_kyc_guard \
+          NADABO_KYC_GUARD_DB_PASSWORD="${guard_pw}" \
+          APP_KEY="${app_key}" \
+          timeout -k 30 540 php -d zend.exception_ignore_args=1 vendor/pestphp/pest/bin/pest \
+            --configuration phpunit.kyc-migrations-mariadb.xml \
+            --log-junit "${junit}" \
+            --fail-on-risky --fail-on-warning --fail-on-phpunit-warning --fail-on-incomplete --fail-on-skipped \
+            --fail-on-empty-test-suite --fail-on-notice --fail-on-phpunit-deprecation \
+            < /dev/null 2>&1 | tee "${console}"
+          pipe_status=("${PIPESTATUS[@]}")
+          set -e
+          suite_rc=${pipe_status[0]}
+          tee_rc=${pipe_status[1]}
+          if (( suite_rc == 0 && tee_rc != 0 )); then
+            suite_rc=${tee_rc}
+          fi
+
+          # Checks. The JUnit checks apply only to a run that exited 0, because a failed run may leave a partial report.
+          # A failed check fails the step. Test 7 is found by its exact JUnit name, which Pest derives from its description.
+          check_rc=0
+          if [[ "${env_owned}" == 1 && -s "${env_file}" ]]; then
+            echo "::error::The environment file this run created is no longer empty after the suite. Its contents are not printed."
+            check_rc=1
+          fi
+          gate_line=""
+          if (( suite_rc == 0 )); then
+            gate_line="$(python3 -I - "${junit}" <<'PY'
+          import sys
+          import xml.etree.ElementTree as ET
+
+          EXPECTED = 16  # Change this in the same reviewed commit that adds or removes a test.
+          TEST_7 = 'it refuses the trigger migration under the restricted account, before the migration changes anything'
+          cases = list(ET.parse(sys.argv[1]).getroot().iter('testcase'))
+          skipped = [c for c in cases if c.find('skipped') is not None]
+          failed = [c for c in cases if c.find('failure') is not None or c.find('error') is not None]
+          if len(cases) != EXPECTED or skipped or failed:
+              sys.exit(f'Expected {EXPECTED} test cases with none skipped or failed. Found {len(cases)} '
+                       f'cases, {len(skipped)} skipped, {len(failed)} failed or errored.')
+          test_7 = [c for c in cases if c.get('name') == TEST_7]
+          try:
+              asserted = int(test_7[0].get('assertions', '')) if len(test_7) == 1 else 0
+          except ValueError:
+              asserted = 0
+          if len(test_7) != 1 or asserted < 1:
+              sys.exit(f'Test 7 must appear once with at least one assertion. Found {len(test_7)} entries '
+                       f'with {asserted} assertions.')
+          print(f'OK: {len(cases)} test cases, none skipped, none failed.')
+          PY
+            )" || check_rc=1
+          fi
+
+          # Secret scan. It is a tripwire, not the control: the masks protect the job log, and no file here is uploaded.
+          # It runs whatever the suite's status. grep exits 0 on a match, 1 when nothing matches, and 2 on an error. A
+          # match and an error both fail the step, and only 1 passes.
+          scan_rc=0
+          for file in "${junit}" "${console}"; do
+            rc=0
+            grep -q -F -f <(printf '%s\n' "${owner_pw}" "${guard_pw}" "${app_key}" "${raw_key}" "${json_raw_key}") "${file}" || rc=$?
+            case "${rc}" in
+              0) echo "::error::A secret value appears in ${file##*/}."; scan_rc=1 ;;
+              1) ;;
+              *) echo "::error::The secret scan could not read ${file##*/} (grep exit status ${rc})."; scan_rc=1 ;;
+            esac
+          done
+          if (( scan_rc != 0 )); then
+            check_rc=1
+          fi
+
+          # Printed only after the secret scan passes. The OK line also needs a passing suite, gate and tripwire.
+          if (( scan_rc == 0 && check_rc == 0 )) && [[ -n "${gate_line}" ]]; then
+            echo "${gate_line}"
+          fi
+          # One line per test and a total, whatever the suite's status. The report is read only after the scan passes.
+          if (( scan_rc == 0 )); then
+            python3 -I - "${junit}" <<'PY'
+          import re
+          import sys
+          import xml.etree.ElementTree as ET
+
+          def clean(text):
+              return re.sub(r'[^\x20-\x7e]', '?', text or '')
+
+          try:
+              cases = list(ET.parse(sys.argv[1]).getroot().iter('testcase'))
+          except (OSError, ET.ParseError):
+              print('TOTAL no readable JUnit report was written, so no test lines follow.')
+              sys.exit(0)
+          counts = {'passed': 0, 'skipped': 0, 'failed': 0, 'errored': 0}
+          assertions = 0
+          for case in cases:
+              if case.find('skipped') is not None:
+                  status = 'skipped'
+              elif case.find('failure') is not None:
+                  status = 'failed'
+              elif case.find('error') is not None:
+                  status = 'errored'
+              else:
+                  status = 'passed'
+              counts[status] += 1
+              shown = case.get('assertions', '?')
+              try:
+                  assertions += int(shown)
+              except ValueError:
+                  pass
+              print(f"TEST {status} assertions={clean(shown)} {clean(case.get('name'))}")
+          print(f"TOTAL {len(cases)} tests: {counts['passed']} passed, {counts['skipped']} skipped, "
+                f"{counts['failed']} failed, {counts['errored']} errored; {assertions} assertions counted.")
+          PY
+          fi
+
+          # The suite's own status is kept, so a failed run keeps its exit code. Otherwise a failed check fails the step.
+          if (( suite_rc != 0 )); then
+            echo "::error::The suite exited with status ${suite_rc}."
+            exit "${suite_rc}"
+          fi
+          exit "${check_rc}"
