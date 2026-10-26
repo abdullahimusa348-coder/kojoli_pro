@@ -13,8 +13,9 @@ use LogicException;
  * from closed lists, and two whole-number counts that must repeat a value the records hold. requirement_count must equal the number
  * of requirement rows its submission holds, and size_bytes must equal the stored size of the event's document. The database checks
  * none of the keys, values or counts (see the migration that creates this table). A raw SQL insert skips these checks, so the two
- * equalities hold only for rows this model writes. The only numbers the trail holds are row counts and stored document sizes, and no
- * identity value is stored as either. Append-only: never changed or removed.
+ * equalities hold only for rows this model writes. Apart from its own row id, its only numbers are the two metadata counts and the
+ * integer identifiers of its customer, submission, document and staff member. Those identifiers identify records and people, but they
+ * are not identity values: no BVN or NIN value is stored in any column or in metadata. Append-only: never changed or removed.
  */
 class KycAuditEvent extends Model
 {
